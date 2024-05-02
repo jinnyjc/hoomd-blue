@@ -70,16 +70,20 @@ class __attribute__((visibility("default"))) RotatedParallelPlateGeometry
         if (sign == +1)
             {
             dt = (pos.y - y1) / (vel.x * tan(m_angle * M_PI) - vel.y);
+
+            pos.x -= vel.x * dt;
+            pos.y = y1;
+            pos.z -= vel.z * dt;
             }
 
         if (sign == -1)
             {
             dt = (y2 - pos.y) / (vel.x * tan(m_angle * M_PI) - vel.y);
-            }
 
-        pos.x -= vel.x * dt;
-        pos.y = sign * m_H;
-        pos.z -= vel.z * dt;
+            pos.x -= vel.x * dt;
+            pos.y = y2;
+            pos.z -= vel.z * dt;
+            }
 
         if (m_no_slip)
             {
