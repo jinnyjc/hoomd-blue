@@ -24,20 +24,19 @@ namespace hoomd
 namespace mpcd
     {
 //! Rotated parallel plate (slit) geometry
-/*!
- */
+
 class __attribute__((visibility("default"))) RotatedParallelPlateGeometry
     {
     public:
     //! Constructor
     /*!
-     * \param H Channel half-width
+     * \param separation Distance between plates
      * \param angle Rotation angle (degrees)
      * \param V Velocity of the wall
      * \param no_slip Boundary condition at the wall (slip or no-slip)
      */
-    HOSTDEVICE RotatedParallelPlateGeometry(Scalar H, Scalar angle, Scalar V, bool no_slip)
-        : m_H(H), m_angle(angle * M_PI / 180.), m_V(V), m_no_slip(no_slip)
+    HOSTDEVICE RotatedParallelPlateGeometry(Scalar separation, Scalar angle, Scalar V, bool no_slip)
+        : m_H(Scalar(0.5) * separation), m_angle(angle * M_PI / 180.), m_V(V), m_no_slip(no_slip)
         {
         }
 
@@ -55,43 +54,41 @@ class __attribute__((visibility("default"))) RotatedParallelPlateGeometry
      */
     HOSTDEVICE bool detectCollision(Scalar3& pos, Scalar3& vel, Scalar& dt) const
         {
-        // TODO: fill this in
-        const Scalar y1 = pos.x * tan(m_angle * M_PI / 180) + m_H;
-        const Scalar y2 = pos.x * tan(m_angle * M_PI / 180) - m_H;
+        const Scalar sin_angle = slow::sin(m_angle);
+        const Scalar cos_angle = slow::cos(m_angle);
+        const Scalar tan_angle = sin_angle / cos_angle;
+        const Scalar y_center = pos.x * tan_angle;
+        const Scalar y1 = y_center + m_H;
+        const Scalar y2 = y_center - m_H;
 
         const signed char sign = (char)((pos.y > y1) - (pos.y < y2));
 
-        if (sign == 0 || (vel.x * tan(m_angle * M_PI) - vel.y) == Scalar(0))
+        const Scalar normal_speed = vel.x * -sin_angle + vel.y * cos_angle;
+        if (sign == 0 || (normal_speed == Scalar(0)))
             {
             dt = Scalar(0);
             return false;
             }
 
-        if (sign == +1)
-            {
-            dt = (pos.y - y1) / (vel.x * tan(m_angle * M_PI) - vel.y);
+        const Scalar y_wall = (sign == 1) ? y1 : y2;
+        dt = (y_wall - pos.y) * (-cos_angle) / normal_speed;
 
-            pos.x -= vel.x * dt;
-            pos.y = y1;
-            pos.z -= vel.z * dt;
-            }
-
-        if (sign == -1)
-            {
-            dt = (y2 - pos.y) / (vel.x * tan(m_angle * M_PI) - vel.y);
-
-            pos.x -= vel.x * dt;
-            pos.y = y2;
-            pos.z -= vel.z * dt;
-            }
+        pos -= vel * dt;
 
         if (m_no_slip)
             {
-            vel.x = -vel.x + Scalar(sign * 2) * m_V;
+            const Scalar dV = Scalar(sign * 2) * m_V;
+            vel.x = -vel.x + dV * cos_angle;
+            vel.y = -vel.y + dV * sin_angle;
             vel.z = -vel.z;
             }
-        // both slip and no-slip have no penetration of the surface
-        vel.y = -vel.y;
+
+        else
+            {
+            const Scalar dv = Scalar(2) * normal_speed;
+            vel.x -= dv * -sin_angle;
+            vel.y -= dv * cos_angle;
+            }
 
         return true;
         }
@@ -103,20 +100,22 @@ class __attribute__((visibility("default"))) RotatedParallelPlateGeometry
      */
     HOSTDEVICE bool isOutside(const Scalar3& pos) const
         {
-        // TODO: fill this in
-        const Scalar y1 = pos.x * tan(m_angle * M_PI / 180.) + m_H;
-        const Scalar y2 = pos.x * tan(m_angle * M_PI / 180.) - m_H;
-
+        const Scalar sin_angle = slow::sin(m_angle);
+        const Scalar cos_angle = slow::cos(m_angle);
+        const Scalar tan_angle = sin_angle / cos_angle;
+        const Scalar y_center = pos.x * tan_angle;
+        const Scalar y1 = y_center + m_H;
+        const Scalar y2 = y_center - m_H;
         return (pos.y > y1 || pos.y < y2);
         }
 
-    //! Get channel half width
+    //! Get distance between plates
     /*!
-     * \returns Channel half width
+     * \returns Distance between plates
      */
-    HOSTDEVICE Scalar getH() const
+    HOSTDEVICE Scalar getSeparation() const
         {
-        return m_H;
+        return m_H * Scalar(2);
         }
 
     //! Get the rotation angle of the plates
