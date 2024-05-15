@@ -43,6 +43,7 @@ set(_mpcd_headers
     ParallelPlateGeometryFiller.h
     PlanarPoreGeometry.h
     PlanarPoreGeometryFiller.h
+    RotatedParallelPlateGeometry.h
     Sorter.h
     SRDCollisionMethod.h
     StreamingGeometry.h
@@ -112,6 +113,7 @@ set(_forces
 set(_geometries
     ParallelPlateGeometry
     PlanarPoreGeometry
+    RotatedParallelPlateGeometry
     )
 foreach(_force ${_forces})
     # append force itself first

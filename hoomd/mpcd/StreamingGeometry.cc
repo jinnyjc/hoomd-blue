@@ -37,6 +37,18 @@ void export_PlanarPoreGeometry(pybind11::module& m)
         .def_property_readonly("no_slip", &PlanarPoreGeometry::getNoSlip);
     }
 
+void export_RotatedParallelPlateGeometry(pybind11::module& m)
+    {
+    pybind11::class_<RotatedParallelPlateGeometry, std::shared_ptr<RotatedParallelPlateGeometry>>(
+        m,
+        RotatedParallelPlateGeometry::getName().c_str())
+        .def(pybind11::init<Scalar, Scalar, Scalar, bool>())
+        .def_property_readonly("H", &RotatedParallelPlateGeometry::getH)
+        .def_property_readonly("angle", &RotatedParallelPlateGeometry::getAngle)
+        .def_property_readonly("V", &RotatedParallelPlateGeometry::getVelocity)
+        .def_property_readonly("no_slip", &RotatedParallelPlateGeometry::getNoSlip);
+    }
+
     } // end namespace detail
     } // end namespace mpcd
     } // end namespace hoomd

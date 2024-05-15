@@ -144,6 +144,7 @@ PYBIND11_MODULE(_mpcd, m)
 
     mpcd::detail::export_ParallelPlateGeometry(m);
     mpcd::detail::export_PlanarPoreGeometry(m);
+    mpcd::detail::export_RotatedParallelPlateGeometry(m);
 
     mpcd::detail::export_StreamingMethod(m);
     // bulk

@@ -11,6 +11,7 @@
 
 #include "ParallelPlateGeometry.h"
 #include "PlanarPoreGeometry.h"
+#include "RotatedParallelPlateGeometry.h"
 
 #ifndef __HIPCC__
 #include <pybind11/pybind11.h>
@@ -28,8 +29,17 @@ void export_ParallelPlateGeometry(pybind11::module& m);
 //! Export PlanarPoreGeometry to python
 void export_PlanarPoreGeometry(pybind11::module& m);
 
+<<<<<<< HEAD
     } // end namespace detail
     } // end namespace mpcd
     } // end namespace hoomd
+=======
+//! Export RotatedParallelPlateGeometry to python
+void export_RotatedParallelPlateGeometry(pybind11::module& m);
+
+    } // end namespace detail
+    } // end namespace mpcd
+    } // end namespace hoomd
+>>>>>>> c665d325a (Add rotated parallel plate geometry class)
 #endif // __HIPCC__
 #endif // MPCD_STREAMING_GEOMETRY_H_
