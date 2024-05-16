@@ -124,6 +124,78 @@ class ParallelPlates(Geometry):
         super()._attach_hook()
 
 
+class RotatedParallelPlates(Geometry):
+    r"""Rotated parallel-plate channel.
+
+    Args:
+        separation (float): Distance between plates.
+        angle (float): Rotation angle in degrees.
+        speed (float): Wall speed.
+        no_slip (bool): If True, surfaces have no-slip boundary condition.
+            Otherwise, they have the slip boundary condition.
+
+    `RotatedParallelPlates` works similarly to parallel plates but angle rotates
+    the plates. The particles are confined between two infinite rotated parallel
+    plates centered around the origin. The plates are placed at
+    :math:`y=-H + x * tan(angle)` and :math:`y=+H + x* tan(angle)`,
+    where the total`separation` is :math:`2H * cos(angle)`.
+
+    .. rubric:: Examples:
+
+    Stationary rotated parallel plates with no-slip boundary condition.
+
+    .. code-block:: python
+
+        rotatedplates = hoomd.mpcd.geometry.RotatedParallelPlates(
+            separation=6.0, angle=45)
+        stream = hoomd.mpcd.stream.BounceBack(period=1, geometry=rotatedplates)
+        simulation.operations.integrator.streaming_method = stream
+
+    Stationary rotated parallel plates with slip boundary condition.
+
+    .. code-block:: python
+
+        rotatedplates = hoomd.mpcd.geometry.RotatedParallelPlates(
+            separation=6.0, angle=45, no_slip=False)
+        stream = hoomd.mpcd.stream.BounceBack(period=1, geometry=rotatedplates)
+        simulation.operations.integrator.streaming_method = stream
+
+    Moving parallel plates.
+
+    .. code-block:: python
+
+        rotatedplates = hoomd.mpcd.geometry.RotatedParallelPlates(
+            separation=6.0, angle=45, speed=1.0, no_slip=True)
+        stream = hoomd.mpcd.stream.BounceBack(period=1, geometry=rotatedplates)
+        simulation.operations.integrator.streaming_method = stream
+
+    Attributes:
+        separation (float): Distance between plates (*read only*).
+
+        angle (float): Rotation angle in degrees (*read only*).
+
+        speed (float): Wall speed (*read only*).
+
+            `speed` will have no effect if `no_slip` is False because the slip
+            surface cannot generate shear stress.
+
+    """
+
+    def __init__(self, separation, angle, speed=0.0, no_slip=True):
+        super().__init__(no_slip)
+        param_dict = ParameterDict(
+            separation=float(separation),
+            angle=float(angle),
+            speed=float(speed),
+        )
+        self._param_dict.update(param_dict)
+
+    def _attach_hook(self):
+        self._cpp_obj = _mpcd.RotatedParallelPlates(self.separation, self.angle,
+                                                    self.speed, self.no_slip)
+        super()._attach_hook()
+
+
 class PlanarPore(Geometry):
     r"""Pore with parallel plate opening.
 

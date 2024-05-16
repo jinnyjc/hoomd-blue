@@ -45,7 +45,7 @@ void export_RotatedParallelPlateGeometry(pybind11::module& m)
         .def(pybind11::init<Scalar, Scalar, Scalar, bool>())
         .def_property_readonly("separation", &RotatedParallelPlateGeometry::getSeparation)
         .def_property_readonly("angle", &RotatedParallelPlateGeometry::getAngle)
-        .def_property_readonly("V", &RotatedParallelPlateGeometry::getVelocity)
+        .def_property_readonly("speed", &RotatedParallelPlateGeometry::getSpeed)
         .def_property_readonly("no_slip", &RotatedParallelPlateGeometry::getNoSlip);
     }
 

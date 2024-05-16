@@ -56,6 +56,49 @@ class TestParallelPlates:
         pickling_check(geom)
 
 
+class TestRotatedParallelPlates:
+
+    def test_default_init(self, simulation_factory, snap):
+        geom = hoomd.mpcd.geometry.RotatedParallelPlates(separation=8.0,
+                                                         angle=45)
+        assert geom.separation == 8.0
+        assert geom.angle == 45
+        assert geom.speed == 0.0
+        assert geom.no_slip
+
+        sim = simulation_factory(snap)
+        geom._attach(sim)
+        assert geom.separation == 8.0
+        assert geom.angle == 45
+        assert geom.speed == 0.0
+        assert geom.no_slip
+
+    def test_nondefault_init(self, simulation_factory, snap):
+        geom = hoomd.mpcd.geometry.RotatedParallelPlates(separation=10.0,
+                                                         angle=45,
+                                                         speed=1.0,
+                                                         no_slip=False)
+        assert geom.separation == 10.0
+        assert geom.angle == 45
+        assert geom.speed == 1.0
+        assert not geom.no_slip
+
+        sim = simulation_factory(snap)
+        geom._attach(sim)
+        assert geom.separation == 10.0
+        assert geom.angle == 45
+        assert geom.speed == 1.0
+        assert not geom.no_slip
+
+    def test_pickling(self, simulation_factory, snap):
+        geom = hoomd.mpcd.geometry.RotatedParallelPlates(separation=8.0)
+        pickling_check(geom)
+
+        sim = simulation_factory(snap)
+        geom._attach(sim)
+        pickling_check(geom)
+
+
 class TestPlanarPore:
 
     def test_default_init(self, simulation_factory, snap):

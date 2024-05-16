@@ -32,12 +32,15 @@ class __attribute__((visibility("default"))) RotatedParallelPlateGeometry
     /*!
      * \param separation Distance between plates
      * \param angle Rotation angle (degrees)
-     * \param V Velocity of the wall
+     * \param speed Speed of the wall
      * \param no_slip Boundary condition at the wall (slip or no-slip)
      */
-    HOSTDEVICE RotatedParallelPlateGeometry(Scalar separation, Scalar angle, Scalar V, bool no_slip)
-        : m_H(Scalar(0.5) * separation), m_angle(angle * M_PI / 180.), m_V(V), m_no_slip(no_slip)
+    HOSTDEVICE
+    RotatedParallelPlateGeometry(Scalar separation, Scalar angle, Scalar speed, bool no_slip)
+        : m_V(speed), m_no_slip(no_slip)
         {
+        m_angle = angle * M_PI / Scalar(180.);
+        m_H = separation / (Scalar(2) * slow::cos(m_angle));
         }
 
     //! Detect collision between the particle and the boundary
@@ -61,6 +64,10 @@ class __attribute__((visibility("default"))) RotatedParallelPlateGeometry
         const Scalar y1 = y_center + m_H;
         const Scalar y2 = y_center - m_H;
 
+        /* Check if particle is in bounds or could not have left because
+         * normal speed is zero, and exit early. The normal is
+         * n = [-sin(angle), cos(angle)] with no z component.
+         */
         const signed char sign = (char)((pos.y > y1) - (pos.y < y2));
 
         const Scalar normal_speed = vel.x * -sin_angle + vel.y * cos_angle;
@@ -70,11 +77,18 @@ class __attribute__((visibility("default"))) RotatedParallelPlateGeometry
             return false;
             }
 
+        /* Find the time remaining when the particle is collided with wall. This time is computed
+         * using the distance difference between pos.y and y_wall in the normal direction divided by
+         * normal speed. The distance difference = (y_wall - pos.y) * (-cos_angle).
+         */
         const Scalar y_wall = (sign == 1) ? y1 : y2;
         dt = (y_wall - pos.y) * (-cos_angle) / normal_speed;
 
+        // backtrack the particle for dt to get to point of contact
         pos -= vel * dt;
 
+        // update velocity according to bounday conditions
+        // no-slip requires reflection of the tangential components, so vel = -vel + 2V.
         if (m_no_slip)
             {
             const Scalar dV = Scalar(sign * 2) * m_V;
@@ -82,7 +96,7 @@ class __attribute__((visibility("default"))) RotatedParallelPlateGeometry
             vel.y = -vel.y + dV * sin_angle;
             vel.z = -vel.z;
             }
-
+        // slip requires reflection of the normal components, so vel = vel - 2n,
         else
             {
             const Scalar dv = Scalar(2) * normal_speed;
@@ -100,9 +114,7 @@ class __attribute__((visibility("default"))) RotatedParallelPlateGeometry
      */
     HOSTDEVICE bool isOutside(const Scalar3& pos) const
         {
-        const Scalar sin_angle = slow::sin(m_angle);
-        const Scalar cos_angle = slow::cos(m_angle);
-        const Scalar tan_angle = sin_angle / cos_angle;
+        const Scalar tan_angle = slow::tan(m_angle);
         const Scalar y_center = pos.x * tan_angle;
         const Scalar y1 = y_center + m_H;
         const Scalar y2 = y_center - m_H;
@@ -121,14 +133,14 @@ class __attribute__((visibility("default"))) RotatedParallelPlateGeometry
     //! Get the rotation angle of the plates
     HOSTDEVICE Scalar getAngle() const
         {
-        return m_angle * (180. / M_PI);
+        return m_angle * Scalar(180.) / M_PI;
         }
 
-    //! Get the wall velocity
+    //! Get the wall speed
     /*!
-     * \returns Wall velocity
+     * \returns Wall speed
      */
-    HOSTDEVICE Scalar getVelocity() const
+    HOSTDEVICE Scalar getSpeed() const
         {
         return m_V;
         }
@@ -151,8 +163,8 @@ class __attribute__((visibility("default"))) RotatedParallelPlateGeometry
 #endif // __HIPCC__
 
     private:
-    const Scalar m_H;     //!< Half of the channel width
-    const Scalar m_angle; //!< Rotation angle of plates
+    Scalar m_H;           //!< Half of the channel width
+    Scalar m_angle;       //!< Rotation angle of plates
     const Scalar m_V;     //!< Velocity of the wall
     const bool m_no_slip; //!< Boundary condition
     };
