@@ -86,10 +86,12 @@ void BounceBackStreamingMethodGPU<Geometry, Force>::stream(uint64_t timestep)
     ArrayHandle<Scalar4> d_vel(this->m_mpcd_pdata->getVelocities(),
                                access_location::device,
                                access_mode::readwrite);
+    BoxDim box = this->m_cl->getCoverageBox();
+    box.setTiltFactors(1, 0, 0);
     mpcd::gpu::stream_args_t args(d_pos.data,
                                   d_vel.data,
                                   this->m_mpcd_pdata->getMass(),
-                                  this->m_cl->getCoverageBox(),
+                                  box,
                                   this->m_mpcd_dt,
                                   this->m_mpcd_pdata->getN(),
                                   m_tuner->getParam()[0]);

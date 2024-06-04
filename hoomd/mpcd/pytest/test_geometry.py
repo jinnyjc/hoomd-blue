@@ -91,7 +91,8 @@ class TestRotatedParallelPlates:
         assert not geom.no_slip
 
     def test_pickling(self, simulation_factory, snap):
-        geom = hoomd.mpcd.geometry.RotatedParallelPlates(separation=8.0)
+        geom = hoomd.mpcd.geometry.RotatedParallelPlates(separation=8.0,
+                                                         angle=45)
         pickling_check(geom)
 
         sim = simulation_factory(snap)

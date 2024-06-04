@@ -111,7 +111,8 @@ void BounceBackStreamingMethod<Geometry, Force>::stream(uint64_t timestep)
         throw std::runtime_error("Cell list has not been set");
         }
 
-    const BoxDim box = m_cl->getCoverageBox();
+    BoxDim box = m_cl->getCoverageBox();
+    box.setTiltFactors(1, 0, 0);
 
     ArrayHandle<Scalar4> h_pos(m_mpcd_pdata->getPositions(),
                                access_location::host,

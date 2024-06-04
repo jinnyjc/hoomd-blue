@@ -175,6 +175,25 @@ PYBIND11_MODULE(_mpcd, m)
     mpcd::detail::export_BounceBackStreamingMethodGPU<mpcd::ParallelPlateGeometry, mpcd::SineForce>(
         m);
 #endif // ENABLE_HIP
+    // rotated parallel plate
+    mpcd::detail::export_BounceBackStreamingMethod<mpcd::RotatedParallelPlateGeometry,
+                                                   mpcd::BlockForce>(m);
+    mpcd::detail::export_BounceBackStreamingMethod<mpcd::RotatedParallelPlateGeometry,
+                                                   mpcd::ConstantForce>(m);
+    mpcd::detail::export_BounceBackStreamingMethod<mpcd::RotatedParallelPlateGeometry,
+                                                   mpcd::NoForce>(m);
+    mpcd::detail::export_BounceBackStreamingMethod<mpcd::RotatedParallelPlateGeometry,
+                                                   mpcd::SineForce>(m);
+#ifdef ENABLE_HIP
+    mpcd::detail::export_BounceBackStreamingMethodGPU<mpcd::RotatedParallelPlateGeometry,
+                                                      mpcd::BlockForce>(m);
+    mpcd::detail::export_BounceBackStreamingMethodGPU<mpcd::RotatedParallelPlateGeometry,
+                                                      mpcd::ConstantForce>(m);
+    mpcd::detail::export_BounceBackStreamingMethodGPU<mpcd::RotatedParallelPlateGeometry,
+                                                      mpcd::NoForce>(m);
+    mpcd::detail::export_BounceBackStreamingMethodGPU<mpcd::RotatedParallelPlateGeometry,
+                                                      mpcd::SineForce>(m);
+#endif // ENABLE_HIP
     // planar pore
     mpcd::detail::export_BounceBackStreamingMethod<mpcd::PlanarPoreGeometry, mpcd::BlockForce>(m);
     mpcd::detail::export_BounceBackStreamingMethod<mpcd::PlanarPoreGeometry, mpcd::ConstantForce>(
@@ -191,9 +210,11 @@ PYBIND11_MODULE(_mpcd, m)
 #endif // ENABLE_HIP
 
     mpcd::detail::export_BounceBackNVE<mpcd::ParallelPlateGeometry>(m);
+    mpcd::detail::export_BounceBackNVE<mpcd::RotatedParallelPlateGeometry>(m);
     mpcd::detail::export_BounceBackNVE<mpcd::PlanarPoreGeometry>(m);
 #ifdef ENABLE_HIP
     mpcd::detail::export_BounceBackNVEGPU<mpcd::ParallelPlateGeometry>(m);
+    mpcd::detail::export_BounceBackNVEGPU<mpcd::RotatedParallelPlateGeometry>(m);
     mpcd::detail::export_BounceBackNVEGPU<mpcd::PlanarPoreGeometry>(m);
 #endif // ENABLE_HIP
 

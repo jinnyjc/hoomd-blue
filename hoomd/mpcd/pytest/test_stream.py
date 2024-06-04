@@ -316,6 +316,120 @@ class TestParallelPlates:
         assert sm.check_mpcd_particles() is expected_result
 
 
+class TestRotatedParallelPlates:
+
+    def test_step_noslip(self, simulation_factory, snap):
+        """Test step with no-slip boundary conditions."""
+        if snap.communicator.rank == 0:
+            snap.configuration.box = [12, 10, 10, 0, 0, 0]
+            snap.mpcd.N = 1
+            snap.mpcd.position[:] = [[2.1, -3.3, 0.1]]
+            snap.mpcd.velocity[:] = [[1.0, -1.0, 1.0]]
+        sim = simulation_factory(snap)
+        sm = hoomd.mpcd.stream.BounceBack(
+            period=1,
+            geometry=hoomd.mpcd.geometry.RotatedParallelPlates(separation=8.0,
+                                                               angle=45))
+        ig = hoomd.mpcd.Integrator(dt=0.1, streaming_method=sm)
+        sim.operations.integrator = ig
+
+        # take one step
+        sim.run(1)
+        snap = sim.state.get_snapshot()
+        if snap.communicator.rank == 0:
+            np.testing.assert_array_almost_equal(snap.mpcd.position,
+                                                 [[2.2, -3.4, 0.2]])
+            np.testing.assert_array_almost_equal(snap.mpcd.velocity,
+                                                 [[1.0, -1.0, 1.0]])
+
+        # take another step, reflecting the particle
+        sim.run(1)
+        snap = sim.state.get_snapshot()
+        if snap.communicator.rank == 0:
+            np.testing.assert_array_almost_equal(
+                snap.mpcd.position, [[2.15685425, -3.35685425, 0.15685425]])
+            np.testing.assert_array_almost_equal(snap.mpcd.velocity,
+                                                 [[-1.0, 1.0, -1.0]])
+
+    def test_step_slip(self, simulation_factory, snap):
+        """Test step with slip boundary conditions."""
+        if snap.communicator.rank == 0:
+            snap.configuration.box = [12, 10, 10, 0, 0, 0]
+            snap.mpcd.N = 1
+            snap.mpcd.position[:] = [2.1, -3.3, 0.1]
+            snap.mpcd.velocity[:] = [1.0, -1.0, 1.0]
+        sim = simulation_factory(snap)
+        sm = hoomd.mpcd.stream.BounceBack(
+            period=1,
+            geometry=hoomd.mpcd.geometry.RotatedParallelPlates(separation=8.0,
+                                                               angle=45,
+                                                               no_slip=False),
+        )
+        ig = hoomd.mpcd.Integrator(dt=0.1, streaming_method=sm)
+        sim.operations.integrator = ig
+
+        # take one step
+        sim.run(1)
+        snap = sim.state.get_snapshot()
+        if snap.communicator.rank == 0:
+            np.testing.assert_array_almost_equal(snap.mpcd.position,
+                                                 [[2.2, -3.4, 0.2]])
+            np.testing.assert_array_almost_equal(snap.mpcd.velocity,
+                                                 [[1.0, -1.0, 1.0]])
+
+        # take another step, reflecting the particle
+        sim.run(1)
+        snap = sim.state.get_snapshot()
+        if snap.communicator.rank == 0:
+            np.testing.assert_array_almost_equal(
+                snap.mpcd.position, [[2.15685425, -3.35685425, 0.3]])
+            np.testing.assert_array_almost_equal(snap.mpcd.velocity,
+                                                 [[-1.0, 1.0, 1.0]])
+
+    def test_step_moving_wall(self, simulation_factory, snap):
+        """Test step with moving wall."""
+        if snap.communicator.rank == 0:
+            snap.configuration.box = [12, 10, 10, 0, 0, 0]
+            snap.mpcd.N = 1
+            snap.mpcd.position[:] = [[2.1, -3.3, 0.1]]
+            snap.mpcd.velocity[:] = [[1.0, -1.0, 1.0]]
+        sim = simulation_factory(snap)
+        sm = hoomd.mpcd.stream.BounceBack(
+            period=1,
+            geometry=hoomd.mpcd.geometry.RotatedParallelPlates(separation=8.0,
+                                                               angle=45,
+                                                               speed=1,
+                                                               no_slip=True),
+        )
+        ig = hoomd.mpcd.Integrator(dt=0.2, streaming_method=sm)
+        sim.operations.integrator = ig
+
+        # run one step and check bounce back of particles
+        sim.run(1)
+        snap = sim.state.get_snapshot()
+        if snap.communicator.rank == 0:
+            np.testing.assert_array_almost_equal(
+                snap.mpcd.position, [[2.05563492, -3.45807358, 0.15685425]])
+            np.testing.assert_array_almost_equal(
+                snap.mpcd.velocity, [[-2.414213562, -0.414213562, -1.0]])
+
+    @pytest.mark.parametrize("H,expected_result", [(4.0, True), (3.8, False)])
+    def test_check_mpcd_particles(self, simulation_factory, snap, H,
+                                  expected_result):
+        if snap.communicator.rank == 0:
+            snap.mpcd.position[0] = [-2.0, 3.5, 0]
+        sim = simulation_factory(snap)
+        sm = hoomd.mpcd.stream.BounceBack(
+            period=1,
+            geometry=hoomd.mpcd.geometry.RotatedParallelPlates(separation=2 * H,
+                                                               angle=45))
+        ig = hoomd.mpcd.Integrator(dt=0.1, streaming_method=sm)
+        sim.operations.integrator = ig
+
+        sim.run(0)
+        assert sm.check_mpcd_particles() is expected_result
+
+
 class TestPlanarPore:
 
     def _make_particles(self, snap):

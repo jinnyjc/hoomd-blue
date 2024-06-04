@@ -21,6 +21,11 @@ template cudaError_t
 nve_bounce_step_one<mpcd::ParallelPlateGeometry>(const bounce_args_t& args,
                                                  const mpcd::ParallelPlateGeometry& geom);
 
+//! Template instantiation of slit geometry streaming
+template cudaError_t nve_bounce_step_one<mpcd::RotatedParallelPlateGeometry>(
+    const bounce_args_t& args,
+    const mpcd::RotatedParallelPlateGeometry& geom);
+
 //! Template instantiation of slit pore geometry streaming
 template cudaError_t
 nve_bounce_step_one<mpcd::PlanarPoreGeometry>(const bounce_args_t& args,

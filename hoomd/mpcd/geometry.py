@@ -129,16 +129,17 @@ class RotatedParallelPlates(Geometry):
 
     Args:
         separation (float): Distance between plates.
-        angle (float): Rotation angle in degrees.
+        angle (float): Rotation angle in degrees. Angle is not allowed to be
+            90 degrees. Equivalent rotations can be obtained using values of
+            angle between 0 and 45 degrees.
         speed (float): Wall speed.
         no_slip (bool): If True, surfaces have no-slip boundary condition.
             Otherwise, they have the slip boundary condition.
 
-    `RotatedParallelPlates` works similarly to parallel plates but angle rotates
-    the plates. The particles are confined between two infinite rotated parallel
-    plates centered around the origin. The plates are placed at
-    :math:`y=-H + x * tan(angle)` and :math:`y=+H + x* tan(angle)`,
-    where the total`separation` is :math:`2H * cos(angle)`.
+    `RotatedParallelPlates` are similar to `ParallelPlates`, but the plates are
+     rotated by ``angle`` relative to the *x* axis. The ``separation`` between
+     the plates is constant and has the same meaning as in `ParallelPlates`.
+     Setting ``angle = 0`` is equivalent to `ParallelPlates`.
 
     .. rubric:: Examples:
 

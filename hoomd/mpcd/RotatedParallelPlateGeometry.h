@@ -69,9 +69,8 @@ class __attribute__((visibility("default"))) RotatedParallelPlateGeometry
          * n = [-sin(angle), cos(angle)] with no z component.
          */
         const signed char sign = (char)((pos.y > y1) - (pos.y < y2));
-
         const Scalar normal_speed = vel.x * -sin_angle + vel.y * cos_angle;
-        if (sign == 0 || (normal_speed == Scalar(0)))
+        if (sign == 0 || normal_speed == Scalar(0))
             {
             dt = Scalar(0);
             return false;
@@ -79,10 +78,10 @@ class __attribute__((visibility("default"))) RotatedParallelPlateGeometry
 
         /* Find the time remaining when the particle is collided with wall. This time is computed
          * using the distance difference between pos.y and y_wall in the normal direction divided by
-         * normal speed. The distance difference = (y_wall - pos.y) * (-cos_angle).
+         * normal speed. The distance difference = (pos.y - y_wall) * cos_angle.
          */
         const Scalar y_wall = (sign == 1) ? y1 : y2;
-        dt = (y_wall - pos.y) * (-cos_angle) / normal_speed;
+        dt = (pos.y - y_wall) * cos_angle / normal_speed;
 
         // backtrack the particle for dt to get to point of contact
         pos -= vel * dt;
@@ -127,7 +126,7 @@ class __attribute__((visibility("default"))) RotatedParallelPlateGeometry
      */
     HOSTDEVICE Scalar getSeparation() const
         {
-        return m_H * Scalar(2);
+        return Scalar(2) * slow::cos(m_angle) * m_H;
         }
 
     //! Get the rotation angle of the plates
