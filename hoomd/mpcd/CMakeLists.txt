@@ -95,6 +95,7 @@ if(ENABLE_HIP)
         CellThermoComputeGPU.h
         CellListGPU.cuh
         CellListGPU.h
+        CollisionMethod.cuh
         CommunicatorGPU.cuh
         CommunicatorGPU.h
         ParallelPlateGeometryFillerGPU.cuh
@@ -116,6 +117,7 @@ if(ENABLE_HIP)
         BounceBackNVEGPU.cu
         CellThermoComputeGPU.cu
         CellListGPU.cu
+        CollisionMethod.cu
         CommunicatorGPU.cu
         ParticleData.cu
         ParallelPlateGeometryFillerGPU.cu
