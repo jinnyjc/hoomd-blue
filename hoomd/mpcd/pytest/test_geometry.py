@@ -1,6 +1,7 @@
 # Copyright (c) 2009-2025 The Regents of the University of Michigan.
 # Part of HOOMD-blue, released under the BSD 3-Clause License.
 
+import numpy as np
 import pytest
 
 import hoomd
@@ -256,3 +257,34 @@ class TestSphere:
         sim = simulation_factory(snap)
         geom._attach(sim)
         pickling_check(geom)
+
+
+class TestTriangulatedGeometry:
+    def test_triangulated_geometry(self, simulation_factory, snap):
+        """Test that TriangulatedGeometry correctly stores vertex/triangle numbers."""
+        sim = simulation_factory(snap)
+        sysdef = sim.state._cpp_sys_def
+
+        vertices = np.array(
+            [
+                [-10, 10, -10],
+                [-10, 10, 10],
+                [10, 10, -10],
+                [10, 10, 10],
+                [-10, -10, 10],
+                [-10, -10, -10],
+                [10, -10, 10],
+                [10, -10, -10],
+            ]
+        )
+        triangles = np.array([[0, 1, 3], [0, 2, 3], [4, 5, 7], [4, 6, 7]])
+
+        geom = hoomd.mpcd.geometry.TriangulatedGeometry(sysdef, vertices, triangles)
+        geom._attach(sim)
+
+        with hoomd.mpcd.geometry.TriangulatedGeometryAccessHost(geom) as data:
+            assert data.vertices.shape[0] == vertices.shape[0]
+            assert data.triangles.shape[0] == triangles.shape[0]
+
+            np.testing.assert_array_almost_equal(data.vertices, vertices)
+            np.testing.assert_array_almost_equal(data.triangles, triangles)

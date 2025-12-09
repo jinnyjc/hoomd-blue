@@ -22,6 +22,28 @@ TriangulatedGeometry::TriangulatedGeometry(std::shared_ptr<SystemDefinition> sys
     {
     }
 
+TriangulatedGeometry::TriangulatedGeometry(std::shared_ptr<SystemDefinition> sysdef,
+                                           unsigned int num_vertices,
+                                           const Scalar3* vertices,
+                                           unsigned int num_triangles,
+                                           const uint3* triangles)
+    : m_sysdef(sysdef), m_exec_conf(m_sysdef->getParticleData()->getExecConf()),
+      m_num_vertices(num_vertices), m_num_triangles(num_triangles),
+      m_vertices(m_num_vertices, m_exec_conf), m_triangles(m_num_triangles, m_exec_conf)
+    {
+    if (m_num_vertices > 0)
+        {
+        ArrayHandle<Scalar3> h_vertices(m_vertices, access_location::host, access_mode::overwrite);
+        std::copy(vertices, vertices + m_num_vertices, h_vertices.data);
+        }
+
+    if (m_num_triangles > 0)
+        {
+        ArrayHandle<uint3> h_triangles(m_triangles, access_location::host, access_mode::overwrite);
+        std::copy(triangles, triangles + m_num_triangles, h_triangles.data);
+        }
+    }
+
 unsigned int TriangulatedGeometry::getNumVertices() const
     {
     return m_num_vertices;
@@ -49,7 +71,35 @@ void export_TriangulatedGeometry(pybind11::module& m)
     pybind11::class_<TriangulatedGeometry, std::shared_ptr<TriangulatedGeometry>>(
         m,
         "TriangulatedGeometry")
-        .def(pybind11::init<std::shared_ptr<SystemDefinition>, unsigned int, unsigned int>())
+        .def(pybind11::init(
+            [](std::shared_ptr<SystemDefinition> sysdef,
+               pybind11::array_t<Scalar, pybind11::array::c_style | pybind11::array::forcecast>
+                   vertices,
+               pybind11::array_t<unsigned int,
+                                 pybind11::array::c_style | pybind11::array::forcecast> triangles)
+            {
+                if (vertices.shape(1) != 3)
+                    {
+                    throw std::runtime_error("Vertices must have shape (N, 3)");
+                    }
+
+                if (triangles.shape(1) != 3)
+                    {
+                    throw std::runtime_error("Triangles must have shape (N, 3)");
+                    }
+
+                unsigned int num_vertices = static_cast<unsigned int>(vertices.shape(0));
+                unsigned int num_triangles = static_cast<unsigned int>(triangles.shape(0));
+
+                const Scalar3* v_ptr = reinterpret_cast<const Scalar3*>(vertices.data());
+                const uint3* t_ptr = reinterpret_cast<const uint3*>(triangles.data());
+
+                return std::make_shared<TriangulatedGeometry>(sysdef,
+                                                              num_vertices,
+                                                              v_ptr,
+                                                              num_triangles,
+                                                              t_ptr);
+            }))
         .def_property_readonly("num_vertices", &TriangulatedGeometry::getNumVertices)
         .def_property_readonly("num_triangles", &TriangulatedGeometry::getNumTriangles);
     }

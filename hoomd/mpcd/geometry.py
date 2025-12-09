@@ -21,9 +21,11 @@ particles are allowed. These constraints will be documented by each object.
 """
 
 from hoomd.data.parameterdicts import ParameterDict
+from hoomd.data.array import HOOMDArray
 from hoomd.mpcd import _mpcd
 from hoomd.operation import _HOOMDBaseObject
 import inspect
+import numpy
 
 
 class Geometry(_HOOMDBaseObject):
@@ -490,6 +492,88 @@ class Sphere(Geometry):
         super()._attach_hook()
 
 
+class TriangulatedGeometry(Geometry):
+    r"""Triangulated boundary surface geometry.
+
+    Args:
+        vertices (array-like): Vertices of the triangulated surface with shape
+            (N, 3).
+        triangles (array-like): Triangular faces that make up the surface with
+            shape (M, 3). Each row contains vertex indices of one triangle.
+
+    `TriangulatedGeometry` defines an arbitrary solid boundary from a user-supplied
+    triangle mesh. Particles are confined by the surface and interact with it through
+    the usual MPCD boundary condition.
+
+    .. rubric:: Examples:
+
+    Construct a triangulated surface.
+
+    .. code-block:: python
+
+        vertices = numpy.array(
+            [[-10, 10, -10], [-10, 10, 10], [10, 10, -10], [10, 10, 10]]
+        )
+        triangles = numpy.array([[0, 1, 3], [0, 2, 3]])
+
+        triangulatedgeometry = hoomd.mpcd.geometry.TriangulatedGeometry(
+            simulation.state._cpp_sys_def, vertices, triangles
+        )
+
+    """
+
+    __doc__ = inspect.cleandoc(__doc__).replace(
+        "{inherited}", inspect.cleandoc(Geometry._doc_inherited)
+    )
+
+    def __init__(self, sysdef, vertices, triangles):
+        param_dict = ParameterDict(
+            sysdef=sysdef, vertices=vertices, triangles=triangles
+        )
+        self._param_dict.update(param_dict)
+
+    def _attach_hook(self):
+        self._cpp_obj = _mpcd.TriangulatedGeometry(
+            self.sysdef, self.vertices, self.triangles
+        )
+        super()._attach_hook()
+
+
+class TriangulatedGeometryAccessBase:
+    r"""Base class for accessing triangulated geometry arrays."""
+
+    __doc__ = inspect.cleandoc(__doc__).replace(
+        "{inherited}", inspect.cleandoc(Geometry._doc_inherited)
+    )
+
+    def __init__(self, geometry):
+        self._geometry = geometry
+        self._simulation = geometry._simulation
+        self._cpp_obj = self._cpp_cls(geometry._cpp_obj)
+
+    def __enter__(self):
+        self._state = self._cpp_obj.enter()
+        return self
+
+    def __exit__(self, type, value, traceback):
+        self._cpp_obj.exit()
+
+    @property
+    def vertices(self):
+        return numpy.asarray(self._cpp_obj.getVertices())
+
+    @property
+    def triangles(self):
+        return numpy.asarray(self._cpp_obj.getTriangles())
+
+
+class TriangulatedGeometryAccessHost(TriangulatedGeometryAccessBase):
+    """Access triangulated geometry data on the CPU."""
+
+    _cpp_cls = _mpcd.TriangulatedGeometryAccessHost
+    _array_cls = HOOMDArray
+
+
 __all__ = [
     "ConcentricCylinders",
     "CosineChannel",
@@ -498,4 +582,6 @@ __all__ = [
     "ParallelPlates",
     "PlanarPore",
     "Sphere",
+    "TriangulatedGeometry",
+    "TriangulatedGeometryAccessHost",
 ]

@@ -1,6 +1,7 @@
 // Copyright (c) 2009-2025 The Regents of the University of Michigan.
 // Part of HOOMD-blue, released under the BSD 3-Clause License.
 
+#include "TriangulatedGeometry.h"
 #include <pybind11/pybind11.h>
 
 namespace hoomd
@@ -228,6 +229,7 @@ PYBIND11_MODULE(_mpcd, m)
     export_SineForce(m);
     export_SRDCollisionMethod(m);
     export_TriangulatedGeometry(m);
+    export_TriangulatedGeometryAccess<HOOMDHostBuffer>(m, "TriangulatedGeometryAccessHost");
 #ifdef ENABLE_HIP
     export_ATCollisionMethodGPU(m);
     export_CellListGPU(m);
@@ -244,6 +246,7 @@ PYBIND11_MODULE(_mpcd, m)
     export_SorterGPU(m);
     export_SphereGeometryFillerGPU(m);
     export_SRDCollisionMethodGPU(m);
+    export_TriangulatedGeometryAccess<HOOMDDeviceBuffer>(m, "TriangulatedGeometryAccessDevice");
 #endif // ENABLE_HIP
 
     export_BulkStreamingMethodBlockForce(m);
