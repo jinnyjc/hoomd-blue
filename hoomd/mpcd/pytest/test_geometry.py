@@ -263,7 +263,6 @@ class TestTriangulatedGeometry:
     def test_triangulated_geometry(self, simulation_factory, snap):
         """Test that TriangulatedGeometry correctly stores vertex/triangle numbers."""
         sim = simulation_factory(snap)
-        sysdef = sim.state._cpp_sys_def
 
         vertices = np.array(
             [
@@ -279,8 +278,7 @@ class TestTriangulatedGeometry:
         )
         triangles = np.array([[0, 1, 3], [0, 2, 3], [4, 5, 7], [4, 6, 7]])
 
-        geom = hoomd.mpcd.geometry.TriangulatedGeometry(sysdef, vertices, triangles)
-        geom._attach(sim)
+        geom = hoomd.mpcd.geometry.TriangulatedGeometry(sim, vertices, triangles, no_slip=True)
 
         with hoomd.mpcd.geometry.TriangulatedGeometryAccessHost(geom) as data:
             assert data.vertices.shape[0] == vertices.shape[0]

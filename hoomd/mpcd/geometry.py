@@ -21,7 +21,7 @@ particles are allowed. These constraints will be documented by each object.
 """
 
 from hoomd.data.parameterdicts import ParameterDict
-from hoomd.data.array import HOOMDArray
+from hoomd.data.array import HOOMDArray, HOOMDGPUArray
 from hoomd.mpcd import _mpcd
 from hoomd.operation import _HOOMDBaseObject
 import inspect
@@ -492,7 +492,7 @@ class Sphere(Geometry):
         super()._attach_hook()
 
 
-class TriangulatedGeometry(Geometry):
+class TriangulatedGeometry(_HOOMDBaseObject):
     r"""Triangulated boundary surface geometry.
 
     Args:
@@ -514,10 +514,10 @@ class TriangulatedGeometry(Geometry):
         vertices = numpy.array(
             [[-10, 10, -10], [-10, 10, 10], [10, 10, -10], [10, 10, 10]]
         )
-        triangles = numpy.array([[0, 1, 3], [0, 2, 3]])
+        plate = numpy.array([[0, 1, 3], [0, 2, 3]])
 
         triangulatedgeometry = hoomd.mpcd.geometry.TriangulatedGeometry(
-            simulation.state._cpp_sys_def, vertices, triangles
+            sim, vertices, plate
         )
 
     """
@@ -526,19 +526,25 @@ class TriangulatedGeometry(Geometry):
         "{inherited}", inspect.cleandoc(Geometry._doc_inherited)
     )
 
-    def __init__(self, sysdef, vertices, triangles):
-        param_dict = ParameterDict(
-            sysdef=sysdef, vertices=vertices, triangles=triangles
-        )
-        self._param_dict.update(param_dict)
+    def __init__(self, simulation, vertices, triangles, no_slip):
+        self._simulation = simulation
+        self._no_slip = bool(no_slip)
 
-    def _attach_hook(self):
         self._cpp_obj = _mpcd.TriangulatedGeometry(
-            self.sysdef, self.vertices, self.triangles
-        )
-        super()._attach_hook()
-
-
+            simulation.state._cpp_sys_def, vertices, triangles)
+        
+    @property
+    def num_vertices(self):
+        return self._cpp_obj.num_vertices
+    
+    @property
+    def num_triangles(self):
+        return self._cpp_obj.num_triangles
+    
+    @property
+    def no_slip(self):
+        return self._no_slip
+    
 class TriangulatedGeometryAccessBase:
     r"""Base class for accessing triangulated geometry arrays."""
 
@@ -547,8 +553,6 @@ class TriangulatedGeometryAccessBase:
     )
 
     def __init__(self, geometry):
-        self._geometry = geometry
-        self._simulation = geometry._simulation
         self._cpp_obj = self._cpp_cls(geometry._cpp_obj)
 
     def __enter__(self):
@@ -573,6 +577,12 @@ class TriangulatedGeometryAccessHost(TriangulatedGeometryAccessBase):
     _cpp_cls = _mpcd.TriangulatedGeometryAccessHost
     _array_cls = HOOMDArray
 
+class TriangulatedGeometryAccessDevice(TriangulatedGeometryAccessBase):
+    "Access triangulated geometry data on the GPU"
+
+    _cpp_cls = _mpcd.TriangulatedGeometryAccessDevice
+    _array_cls = HOOMDGPUArray
+
 
 __all__ = [
     "ConcentricCylinders",
@@ -584,4 +594,5 @@ __all__ = [
     "Sphere",
     "TriangulatedGeometry",
     "TriangulatedGeometryAccessHost",
+    "TriangulatedGeometryAccessDevice"
 ]
