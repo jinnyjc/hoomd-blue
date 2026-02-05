@@ -1359,3 +1359,106 @@ class TestSphere:
 
         sim.run(0)
         assert sm.check_mpcd_particles() is expected_result
+
+class TestTriangulatedGeometry:
+    def test_step_noslip(self, simulation_factory, snap):
+        """Test step with no-slip boundary conditions."""
+        if snap.communicator.rank == 0:
+            snap.mpcd.N = 1
+            snap.mpcd.position[:] = [[1.00, 3.85, -1.00]]
+            snap.mpcd.velocity[:] = [[1.0, 1.0, -1.0]]
+        sim = simulation_factory(snap)
+
+        plates = np.array(
+            [
+                [-5, 4, -5],
+                [-5, 4, 5],
+                [5, 4, -5],
+                [5, 4, 5],
+                [-5, -4, -5],
+                [-5, -4, 5],
+                [5, -4, -5],
+                [5, -4, 5],
+            ]
+        )
+        triangles = np.array([[0, 1, 3], [0, 2, 3], [4, 5, 7], [4, 6, 7]])
+
+        sm = hoomd.mpcd.stream.TriangulatedBounceBack(
+            period=1, geometry=hoomd.mpcd.geometry.TriangulatedGeometry(sim, plates, triangles)
+        )
+        ig = hoomd.mpcd.Integrator(dt=0.1, streaming_method=sm)
+        sim.operations.integrator = ig
+
+        # take one step
+        sim.run(1)
+        snap = sim.state.get_snapshot()
+        if snap.communicator.rank == 0:
+            np.testing.assert_array_almost_equal(
+                snap.mpcd.position, [[1.10, 3.95, -1.10]]
+            )
+            np.testing.assert_array_almost_equal(
+                snap.mpcd.velocity, [[1.0, 1.0, -1.0]]
+            )
+
+        # take another step where one particle will now hit the wall
+        sim.run(1)
+        snap = sim.state.get_snapshot()
+        if snap.communicator.rank == 0:
+            np.testing.assert_array_almost_equal(
+                snap.mpcd.position, [[1.10, 3.95, -1.10]]
+            )
+            np.testing.assert_array_almost_equal(
+                snap.mpcd.velocity, [[-1.0, -1.0, 1.0]]
+            )
+
+    def test_step_slip(self, simulation_factory, snap):
+        """Test step with slip boundary conditions."""
+        if snap.communicator.rank == 0:
+            snap.mpcd.N = 1
+            snap.mpcd.position[:] = [[1.00, 3.85, -1.00]]
+            snap.mpcd.velocity[:] = [[1.0, 1.0, -1.0]]
+        sim = simulation_factory(snap)
+
+        plates = np.array(
+            [
+                [-5, 4, -5],
+                [-5, 4, 5],
+                [5, 4, -5],
+                [5, 4, 5],
+                [-5, -4, -5],
+                [-5, -4, 5],
+                [5, -4, -5],
+                [5, -4, 5],
+            ]
+        )
+        triangles = np.array([[0, 1, 3], [0, 2, 3], [4, 5, 7], [4, 6, 7]])
+
+        sm = hoomd.mpcd.stream.TriangulatedBounceBack(
+            period=1, geometry=hoomd.mpcd.geometry.TriangulatedGeometry(sim, plates, 
+                                                                        triangles,
+                                                                        no_slip=False)
+        )
+        ig = hoomd.mpcd.Integrator(dt=0.1, streaming_method=sm)
+        sim.operations.integrator = ig
+
+        # take one step
+        sim.run(1)
+        snap = sim.state.get_snapshot()
+        if snap.communicator.rank == 0:
+            np.testing.assert_array_almost_equal(
+                snap.mpcd.position, [[1.10, 3.95, -1.10]]
+            )
+            np.testing.assert_array_almost_equal(
+                snap.mpcd.velocity, [[1.0, 1.0, -1.0]]
+            )
+
+        # take another step where one particle will now hit the wall
+        sim.run(1)
+        snap = sim.state.get_snapshot()
+        if snap.communicator.rank == 0:
+            np.testing.assert_array_almost_equal(
+                snap.mpcd.position, [[1.20, 3.95, -1.20]]
+            )
+            np.testing.assert_array_almost_equal(
+                snap.mpcd.velocity, [[1.0, -1.0, -1.0]]
+            )

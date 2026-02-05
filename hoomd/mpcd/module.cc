@@ -74,6 +74,11 @@ void export_BulkStreamingMethodBlockForce(pybind11::module&);
 void export_BulkStreamingMethodConstantForce(pybind11::module&);
 void export_BulkStreamingMethodNoForce(pybind11::module&);
 void export_BulkStreamingMethodSineForce(pybind11::module&);
+
+void export_TriangulatedGeometryStreamingMethodBlockForce(pybind11::module&);
+void export_TriangulatedGeometryStreamingMethodConstantForce(pybind11::module&);
+void export_TriangulatedGeometryStreamingMethodNoForce(pybind11::module&);
+void export_TriangulatedGeometryStreamingMethodSineForce(pybind11::module&);
 #ifdef ENABLE_HIP
 void export_BulkStreamingMethodBlockForceGPU(pybind11::module&);
 void export_BulkStreamingMethodConstantForceGPU(pybind11::module&);
@@ -253,6 +258,10 @@ PYBIND11_MODULE(_mpcd, m)
     export_BulkStreamingMethodConstantForce(m);
     export_BulkStreamingMethodNoForce(m);
     export_BulkStreamingMethodSineForce(m);
+    export_TriangulatedGeometryStreamingMethodBlockForce(m);
+    export_TriangulatedGeometryStreamingMethodConstantForce(m);
+    export_TriangulatedGeometryStreamingMethodNoForce(m);
+    export_TriangulatedGeometryStreamingMethodSineForce(m);
 #ifdef ENABLE_HIP
     export_BulkStreamingMethodBlockForceGPU(m);
     export_BulkStreamingMethodConstantForceGPU(m);

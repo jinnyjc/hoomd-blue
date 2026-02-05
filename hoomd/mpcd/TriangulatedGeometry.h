@@ -30,10 +30,12 @@ class TriangulatedGeometry
      * \param sysdef System definition
      * \param num_vertices Number of vertices
      * \param num_triangles Number of triangles
+     * \param no_slip Boundary condition at the wall (slip or no-slip)
      */
     TriangulatedGeometry(std::shared_ptr<SystemDefinition> sysdef,
                          unsigned int num_vertices,
-                         unsigned int num_triangles);
+                         unsigned int num_triangles,
+                         bool no_slip);
 
     //! Constructor
     /*!
@@ -42,12 +44,14 @@ class TriangulatedGeometry
      * \param vertices List of vertices
      * \param num_triangles Number of triangles
      * \param triangles List of triangles
+     * \param no_slip Boundary condition at the wall (slip or no-slip)
      */
     TriangulatedGeometry(std::shared_ptr<SystemDefinition> sysdef,
                          unsigned int num_vertices,
                          const Scalar3* vertices,
                          unsigned int num_triangles,
-                         const uint3* triangles);
+                         const uint3* triangles,
+                         bool no_slip);
 
     //! Number of vertices
     unsigned int getNumVertices() const;
@@ -58,6 +62,8 @@ class TriangulatedGeometry
     const GPUArray<Scalar3>& getVertices() const;
     const GPUArray<uint3>& getTriangles() const;
 
+    bool getNoSlip() const;
+
     private:
     std::shared_ptr<SystemDefinition> m_sysdef;
     std::shared_ptr<const ExecutionConfiguration> m_exec_conf;
@@ -67,6 +73,8 @@ class TriangulatedGeometry
 
     GPUArray<Scalar3> m_vertices;
     GPUArray<uint3> m_triangles;
+
+    bool m_no_slip;
     };
 
 template<class Output>

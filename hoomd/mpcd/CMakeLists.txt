@@ -49,6 +49,7 @@ set(_mpcd_headers
     SRDCollisionMethod.h
     StreamingMethod.h
     TriangulatedGeometry.h
+    TriangulatedGeometryStreamingMethod.h
     VirtualParticleFiller.h
     )
 
@@ -140,6 +141,17 @@ endforeach()
 foreach(_force ${_forces})
     list(APPEND _mpcd_cc_sources ${_force}.cc)
     list(APPEND _mpcd_headers ${_force}.h)
+endforeach()
+
+# generate cc templates for triangulated geoemtry streaming method
+foreach(_force ${_forces})
+    # bulk geometry is special
+    configure_file(
+        TriangulatedGeometryStreamingMethod.cc.inc
+        TriangulatedGeometryStreamingMethod${_force}.cc
+        @ONLY
+        )
+    list(APPEND _mpcd_cc_sources TriangulatedGeometryStreamingMethod${_force}.cc)
 endforeach()
 
 # generate cc and cu templates for forces and streaming geometries

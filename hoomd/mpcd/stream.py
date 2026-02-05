@@ -32,7 +32,7 @@ from hoomd.data.parameterdicts import ParameterDict
 from hoomd.data.typeconverter import OnlyTypes
 from hoomd.mpcd import _mpcd
 from hoomd.mpcd.force import BodyForce
-from hoomd.mpcd.geometry import Geometry
+from hoomd.mpcd.geometry import Geometry, TriangulatedGeometry
 from hoomd.operation import Operation
 import inspect
 
@@ -349,9 +349,88 @@ class BounceBack(StreamingMethod):
             force = type(None)
         cls._cpp_cpp_class_map[geometry, force] = (module, cpp_class_name)
 
+class TriangulatedBounceBack(StreamingMethod):
+    """Streaming with bounce-back rule for triangulated surfaces.
+
+    Args:
+        period (int): Number of integration steps covered by streaming step.
+        geometry (hoomd.mpcd.geometry.TriangulatedGeometry): Triangulated geometry.
+        mpcd_particle_force (BodyForce): Body force on MPCD particles.
+
+    This streaming method reflects MPCD particles from a triangulated surface
+    using specular reflections (bounce-back) rules using either "slip" or 
+    "no-slip" hydrodynamic boundary conditions. The external force is only applied
+    to the particles ath the beginning and the end of this process.
+    """
+
+    _cpp_class_map = {}
+    __doc__ = (
+        inspect.cleandoc(__doc__)
+        + "\n\n"
+        + inspect.cleandoc(StreamingMethod._doc_inherited)
+    )
+
+    def __init__(self, period, geometry, mpcd_particle_force=None):
+        super().__init__(period, mpcd_particle_force)
+
+        param_dict = ParameterDict(geometry=TriangulatedGeometry)
+        param_dict["geometry"] = geometry
+        self._param_dict.update(param_dict)
+
+    def _attach_hook(self):
+        sim = self._simulation
+
+        # attach and use body force if present
+        if self.mpcd_particle_force is not None:
+            self.mpcd_particle_force._attach(sim)
+            mpcd_particle_force = self.mpcd_particle_force._cpp_obj
+        else:
+            mpcd_particle_force = None
+
+        # try to find force in map, otherwise use default
+        force_type = type(self.mpcd_particle_force)
+        try:
+            class_info = self._cpp_class_map[force_type]
+        except KeyError:
+            if self.mpcd_particle_force is not None:
+                force_name = force_type.__name__
+            else:
+                force_name = "NoForce"
+            class_info = (
+                _mpcd,
+                "TriangulatedGeometryStreamingMethod" + force_name,
+            )
+        class_info = list(class_info)
+        if isinstance(sim.device, hoomd.device.GPU):
+            class_info[1] += "GPU"
+        class_ = getattr(*class_info, None)
+        assert class_ is not None, "C++ streaming method could not be determined"
+
+        self._cpp_obj = class_(
+            sim.state._cpp_sys_def,
+            sim.timestep,
+            self.period,
+            0,
+            self.geometry._cpp_obj,
+            mpcd_particle_force,
+        )
+
+        super()._attach_hook()
+
+    def _detach_hook(self):
+        if self.mpcd_particle_force is not None:
+            self.mpcd_particle_force._detach()
+        super()._detach_hook()
+
+    _cpp_class_map = {}
+
+    @classmethod
+    def _register_cpp_class(cls, force, module, class_name):
+        cls._cpp_class_map[force] = (module, class_name)
 
 __all__ = [
     "BounceBack",
     "Bulk",
     "StreamingMethod",
+    "TriangulatedBounceBack",
 ]

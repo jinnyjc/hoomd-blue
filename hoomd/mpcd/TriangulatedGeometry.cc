@@ -15,10 +15,12 @@ namespace mpcd
 
 TriangulatedGeometry::TriangulatedGeometry(std::shared_ptr<SystemDefinition> sysdef,
                                            unsigned int num_vertices,
-                                           unsigned int num_triangles)
+                                           unsigned int num_triangles,
+                                           bool no_slip)
     : m_sysdef(sysdef), m_exec_conf(m_sysdef->getParticleData()->getExecConf()),
       m_num_vertices(num_vertices), m_num_triangles(num_triangles),
-      m_vertices(m_num_vertices, m_exec_conf), m_triangles(m_num_triangles, m_exec_conf)
+      m_vertices(m_num_vertices, m_exec_conf), m_triangles(m_num_triangles, m_exec_conf),
+      m_no_slip(no_slip)
     {
     }
 
@@ -26,10 +28,12 @@ TriangulatedGeometry::TriangulatedGeometry(std::shared_ptr<SystemDefinition> sys
                                            unsigned int num_vertices,
                                            const Scalar3* vertices,
                                            unsigned int num_triangles,
-                                           const uint3* triangles)
+                                           const uint3* triangles,
+                                           bool no_slip)
     : m_sysdef(sysdef), m_exec_conf(m_sysdef->getParticleData()->getExecConf()),
       m_num_vertices(num_vertices), m_num_triangles(num_triangles),
-      m_vertices(m_num_vertices, m_exec_conf), m_triangles(m_num_triangles, m_exec_conf)
+      m_vertices(m_num_vertices, m_exec_conf), m_triangles(m_num_triangles, m_exec_conf),
+      m_no_slip(no_slip)
     {
     if (m_num_vertices > 0)
         {
@@ -64,6 +68,11 @@ const GPUArray<uint3>& TriangulatedGeometry::getTriangles() const
     return m_triangles;
     }
 
+bool TriangulatedGeometry::getNoSlip() const
+    {
+    return m_no_slip;
+    }
+
 namespace detail
     {
 void export_TriangulatedGeometry(pybind11::module& m)
@@ -76,7 +85,8 @@ void export_TriangulatedGeometry(pybind11::module& m)
                pybind11::array_t<Scalar, pybind11::array::c_style | pybind11::array::forcecast>
                    vertices,
                pybind11::array_t<unsigned int,
-                                 pybind11::array::c_style | pybind11::array::forcecast> triangles)
+                                 pybind11::array::c_style | pybind11::array::forcecast> triangles,
+               bool no_slip)
             {
                 if (vertices.shape(1) != 3)
                     {
@@ -91,17 +101,26 @@ void export_TriangulatedGeometry(pybind11::module& m)
                 unsigned int num_vertices = static_cast<unsigned int>(vertices.shape(0));
                 unsigned int num_triangles = static_cast<unsigned int>(triangles.shape(0));
 
-                const Scalar3* v_ptr = reinterpret_cast<const Scalar3*>(vertices.data());
-                const uint3* t_ptr = reinterpret_cast<const uint3*>(triangles.data());
+                std::vector<Scalar3> v(num_vertices);
+                auto v_in = vertices.unchecked<2>();
+                for (unsigned int i = 0; i < num_vertices; ++i)
+                    v[i] = make_scalar3(v_in(i, 0), v_in(i, 1), v_in(i, 2));
+
+                std::vector<uint3> t(num_triangles);
+                auto t_in = triangles.unchecked<2>();
+                for (unsigned int i = 0; i < num_triangles; ++i)
+                    t[i] = make_uint3(t_in(i, 0), t_in(i, 1), t_in(i, 2));
 
                 return std::make_shared<TriangulatedGeometry>(sysdef,
                                                               num_vertices,
-                                                              v_ptr,
+                                                              v.data(),
                                                               num_triangles,
-                                                              t_ptr);
+                                                              t.data(),
+                                                              no_slip);
             }))
         .def_property_readonly("num_vertices", &TriangulatedGeometry::getNumVertices)
-        .def_property_readonly("num_triangles", &TriangulatedGeometry::getNumTriangles);
+        .def_property_readonly("num_triangles", &TriangulatedGeometry::getNumTriangles)
+        .def_property_readonly("no_slip", &TriangulatedGeometry::getNoSlip);
     }
     } // end namespace detail
     } // end namespace mpcd

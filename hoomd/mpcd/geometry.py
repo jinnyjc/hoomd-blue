@@ -492,7 +492,7 @@ class Sphere(Geometry):
         super()._attach_hook()
 
 
-class TriangulatedGeometry(_HOOMDBaseObject):
+class TriangulatedGeometry:
     r"""Triangulated boundary surface geometry.
 
     Args:
@@ -500,6 +500,8 @@ class TriangulatedGeometry(_HOOMDBaseObject):
             (N, 3).
         triangles (array-like): Triangular faces that make up the surface with
             shape (M, 3). Each row contains vertex indices of one triangle.
+        no_slip (bool): If True, surfaces have no-slip boundary condition.
+            Otherwise, they have the slip boundary condition.
 
     `TriangulatedGeometry` defines an arbitrary solid boundary from a user-supplied
     triangle mesh. Particles are confined by the surface and interact with it through
@@ -526,12 +528,9 @@ class TriangulatedGeometry(_HOOMDBaseObject):
         "{inherited}", inspect.cleandoc(Geometry._doc_inherited)
     )
 
-    def __init__(self, simulation, vertices, triangles, no_slip):
-        self._simulation = simulation
-        self._no_slip = bool(no_slip)
-
+    def __init__(self, simulation, vertices, triangles, no_slip=True):
         self._cpp_obj = _mpcd.TriangulatedGeometry(
-            simulation.state._cpp_sys_def, vertices, triangles)
+            simulation.state._cpp_sys_def, vertices, triangles, no_slip)
         
     @property
     def num_vertices(self):
@@ -543,7 +542,15 @@ class TriangulatedGeometry(_HOOMDBaseObject):
     
     @property
     def no_slip(self):
-        return self._no_slip
+        return self._cpp_obj.no_slip
+    
+    @property
+    def cpu_view(self):
+        return TriangulatedGeometryAccessHost(self)
+    
+    @property
+    def gpu_view(self):
+        return TriangulatedGeometryAccessDevice(self)
     
 class TriangulatedGeometryAccessBase:
     r"""Base class for accessing triangulated geometry arrays."""
