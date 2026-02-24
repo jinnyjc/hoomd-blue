@@ -9,6 +9,7 @@
 #ifndef MPCD_TRIANGULATED_GEOMETRY_H_
 #define MPCD_TRIANGULATED_GEOMETRY_H_
 
+#include "hoomd/BoxDim.h"
 #include "hoomd/ExecutionConfiguration.h"
 #include "hoomd/GPUArray.h"
 #include "hoomd/HOOMDMath.h"
@@ -30,11 +31,13 @@ class TriangulatedGeometry
      * \param sysdef System definition
      * \param num_vertices Number of vertices
      * \param num_triangles Number of triangles
+     * \param unwrap_distance Distance to unwrap the triangles
      * \param no_slip Boundary condition at the wall (slip or no-slip)
      */
     TriangulatedGeometry(std::shared_ptr<SystemDefinition> sysdef,
                          unsigned int num_vertices,
                          unsigned int num_triangles,
+                         const Scalar3 unwrap_distance,
                          bool no_slip);
 
     //! Constructor
@@ -44,6 +47,7 @@ class TriangulatedGeometry
      * \param vertices List of vertices
      * \param num_triangles Number of triangles
      * \param triangles List of triangles
+     * \param unwrap_distance Distance to unwrap the triangles
      * \param no_slip Boundary condition at the wall (slip or no-slip)
      */
     TriangulatedGeometry(std::shared_ptr<SystemDefinition> sysdef,
@@ -51,20 +55,28 @@ class TriangulatedGeometry
                          const Scalar3* vertices,
                          unsigned int num_triangles,
                          const uint3* triangles,
+                         const Scalar3 unwrap_distance,
                          bool no_slip);
 
-    //! Number of vertices
     unsigned int getNumVertices() const;
-
-    //! Number of triangles
     unsigned int getNumTriangles() const;
 
     const GPUArray<Scalar3>& getVertices() const;
     const GPUArray<uint3>& getTriangles() const;
+    
+    const Scalar3 getUnwrapDistance() const;
+
+    unsigned int getNumUnwrappedVertices() const;
+    unsigned int getNumUnwrappedTriangles() const;
+
+    const GPUArray<Scalar3>& getUnwrappedVertices() const;
+    const GPUArray<uint3>& getUnwrappedTriangles() const;
 
     bool getNoSlip() const;
 
     private:
+    void unwrapTriangles();
+
     std::shared_ptr<SystemDefinition> m_sysdef;
     std::shared_ptr<const ExecutionConfiguration> m_exec_conf;
 
@@ -73,6 +85,14 @@ class TriangulatedGeometry
 
     GPUArray<Scalar3> m_vertices;
     GPUArray<uint3> m_triangles;
+
+    const Scalar3 m_unwrap_distance;
+
+    unsigned int m_num_unwrapped_vertices;
+    unsigned int m_num_unwrapped_triangles;
+
+    GPUArray<Scalar3> m_unwrapped_vertices;
+    GPUArray<uint3> m_unwrapped_triangles;
 
     bool m_no_slip;
     };

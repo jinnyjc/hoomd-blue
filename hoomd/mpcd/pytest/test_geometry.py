@@ -278,7 +278,9 @@ class TestTriangulatedGeometry:
         )
         triangles = np.array([[0, 1, 3], [0, 2, 3], [4, 5, 7], [4, 6, 7]])
 
-        geom = hoomd.mpcd.geometry.TriangulatedGeometry(sim, vertices, triangles, no_slip=True)
+        geom = hoomd.mpcd.geometry.TriangulatedGeometry(sim, vertices, triangles, 
+                                                        unwrap_distance=(0.0, 0.0, 0.0),
+                                                        no_slip=True)
 
         with geom.cpu_view as data:
             assert data.vertices.shape[0] == vertices.shape[0]

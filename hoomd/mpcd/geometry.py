@@ -528,9 +528,9 @@ class TriangulatedGeometry:
         "{inherited}", inspect.cleandoc(Geometry._doc_inherited)
     )
 
-    def __init__(self, simulation, vertices, triangles, no_slip=True):
+    def __init__(self, simulation, vertices, triangles, unwrap_distance, no_slip=True):
         self._cpp_obj = _mpcd.TriangulatedGeometry(
-            simulation.state._cpp_sys_def, vertices, triangles, no_slip)
+            simulation.state._cpp_sys_def, vertices, triangles, unwrap_distance, no_slip)
         
     @property
     def num_vertices(self):
@@ -539,6 +539,10 @@ class TriangulatedGeometry:
     @property
     def num_triangles(self):
         return self._cpp_obj.num_triangles
+    
+    @property
+    def unwrap_distance(self):
+        return self._cpp_obj.unwrap_distance
     
     @property
     def no_slip(self):

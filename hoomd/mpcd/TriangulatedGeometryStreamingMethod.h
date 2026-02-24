@@ -118,10 +118,10 @@ void TriangulatedGeometryStreamingMethod<Force>::stream(uint64_t timestep)
     ArrayHandle<Scalar4> h_vel(m_mpcd_pdata->getVelocities(),
                                access_location::host,
                                access_mode::readwrite);
-    ArrayHandle<Scalar3> h_vertices(m_geom->getVertices(),
+    ArrayHandle<Scalar3> h_vertices(m_geom->getUnwrappedVertices(),
                                     access_location::host,
                                     access_mode::read);
-    ArrayHandle<uint3> h_triangles(m_geom->getTriangles(),
+    ArrayHandle<uint3> h_triangles(m_geom->getUnwrappedTriangles(),
                                    access_location::host,
                                    access_mode::read);
     const Scalar mass = m_mpcd_pdata->getMass();
@@ -155,7 +155,7 @@ void TriangulatedGeometryStreamingMethod<Force>::stream(uint64_t timestep)
             vec3<Scalar> best_n(0, 1, 0);
             vec3<Scalar> best_pos = pos_v;
 
-            const unsigned int num_triangles = m_geom->getNumTriangles();
+            const unsigned int num_triangles = m_geom->getNumUnwrappedTriangles();
             const Scalar eps = Scalar(1e-8);
 
             for (unsigned int cur_tri = 0; cur_tri < num_triangles; ++cur_tri)
