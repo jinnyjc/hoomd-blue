@@ -36,6 +36,86 @@ namespace mpcd
  *
  */
 
+inline bool intersectTriangle(const vec3<Scalar>& pos_v,
+                              const vec3<Scalar>& vel_v,
+                              const vec3<Scalar>& a,
+                              const vec3<Scalar>& b,
+                              const vec3<Scalar>& c,
+                              const Scalar dt_remain,
+                              const Scalar eps,
+                              Scalar& t_hit)
+
+    {
+    // calculate dimension where the ray direction is maximal
+    const Scalar ax = fabs(vel_v.x);
+    const Scalar ay = fabs(vel_v.y);
+    const Scalar az = fabs(vel_v.z);
+
+    int kz = 0;
+    if (ay > ax)
+        kz = 1;
+    if ((kz == 0 && az > ax) || (kz == 1 && az > ay))
+        kz = 2;
+    int kx = kz + 1;
+    if (kx == 3)
+        kx = 0;
+    int ky = kx + 1;
+    if (ky == 3)
+        ky = 0;
+
+    const Scalar det = vel_v[kz];
+    if (fabs(det) <= eps)
+        return false;
+
+    if (det < Scalar(0.0))
+        std::swap(kx, ky);
+
+    // calculate shear constants
+    const Scalar Sx = vel_v[kx] / det;
+    const Scalar Sy = vel_v[ky] / det;
+    const Scalar Sz = Scalar(1.0) / det;
+
+    // calculate vertices relative to ray origin
+    const vec3<Scalar> A = a - pos_v;
+    const vec3<Scalar> B = b - pos_v;
+    const vec3<Scalar> C = c - pos_v;
+
+    // apply shear and scale
+    const Scalar Ax = A[kx]- Sx * A[kz];
+    const Scalar Ay = A[ky]- Sy * A[kz];
+    const Scalar Bx = B[kx]- Sx * B[kz];
+    const Scalar By = B[ky]- Sy * B[kz];
+    const Scalar Cx = C[kx]- Sx * C[kz];
+    const Scalar Cy = C[ky]- Sy * C[kz];
+
+    // calculate scaled barycentric coordinates
+    Scalar u = Cx * By - Cy * Bx;
+    Scalar v = Ax * Cy - Ay * Cx;
+    Scalar w = Bx * Ay - By * Ax;
+
+    if ((u < Scalar(0.0) || v < Scalar(0.0) || w < Scalar(0.0)) 
+            && (u > Scalar (0.0) || v > Scalar(0.0) || w > Scalar(0.0)))
+        return false;
+
+    const Scalar inv_det = Scalar(1.0) / (u + v + w);
+    if (!std::isfinite((double)inv_det))
+        return false;
+
+    // scaled z
+    const Scalar Az = Sz * A[kz];
+    const Scalar Bz = Sz * B[kz];
+    const Scalar Cz = Sz * C[kz];
+
+    const Scalar t = (u * Az + v * Bz + w * Cz) * inv_det;
+
+    if (t <= eps || t > dt_remain)
+        return false;
+
+    t_hit = t;
+    return true;
+    }
+
+
 template<class Force>
 class PYBIND11_EXPORT TriangulatedGeometryStreamingMethod : public mpcd::StreamingMethod
     {
@@ -166,44 +246,17 @@ void TriangulatedGeometryStreamingMethod<Force>::stream(uint64_t timestep)
                 const vec3<Scalar> b(h_vertices.data[triangles.y]);
                 const vec3<Scalar> c(h_vertices.data[triangles.z]);
 
-                // find two edges
-                const vec3<Scalar> e1 = b - a;
-                const vec3<Scalar> e2 = c - a;
-
-                // find the determinant
-                vec3<Scalar> pvec = cross(vel_v, e2);
-                const Scalar det = dot(e1, pvec);
-
-                // ray and triangle are parallel if det is close to 0
-                if (fabs(det) < eps)
-                    continue;
-                
-                // inside-outside test
-                const Scalar inv_det = Scalar(1.0) / det;
-                const vec3<Scalar> tvec = pos_v - a;
-                const Scalar u = dot(tvec, pvec) * inv_det;
-
-                if (u < Scalar(0) || u > Scalar(1))
+                // find intersection
+                Scalar t_hit;
+                if (!intersectTriangle(pos_v, vel_v, a, b, c, dt_remain, eps, t_hit))
                     continue;
 
-                const vec3<Scalar> qvec = cross(tvec, e1);
-                const Scalar v = dot(vel_v, qvec) * inv_det;
-
-                if (v < Scalar(0) || u + v > Scalar(1))
-                    continue;
-
-                // find the time the ray hits the triangle
-                const Scalar t_hit = dot(e2, qvec) * inv_det;
-
-                // continue if time  < 0 or time > dt_remain
-                if (t_hit <= eps || t_hit > dt_remain)
-                    continue;
-
-                // choose the earliest hit among all triangles
                 if (t_hit >= best_t)
                     continue;
 
                 // compute triangle normal
+                const vec3<Scalar> e1 = b - a;
+                const vec3<Scalar> e2 = c - a;
                 const vec3<Scalar> n = cross(e1, e2);
                 const Scalar nn = dot(n, n);
 

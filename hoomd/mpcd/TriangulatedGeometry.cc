@@ -12,20 +12,7 @@ namespace hoomd
     {
 namespace mpcd
     {
-
-TriangulatedGeometry::TriangulatedGeometry(std::shared_ptr<SystemDefinition> sysdef,
-                                           unsigned int num_vertices,
-                                           unsigned int num_triangles,
-                                           const Scalar3 unwrap_distance,
-                                           bool no_slip)
-    : m_sysdef(sysdef), m_exec_conf(m_sysdef->getParticleData()->getExecConf()),
-      m_num_vertices(num_vertices), m_num_triangles(num_triangles),
-      m_vertices(m_num_vertices, m_exec_conf), m_triangles(m_num_triangles, m_exec_conf),
-      m_unwrap_distance(unwrap_distance), m_unwrapped_vertices(0, m_exec_conf),
-      m_unwrapped_triangles(0, m_exec_conf), m_no_slip(no_slip)
-    {
-    }
-
+        
 TriangulatedGeometry::TriangulatedGeometry(std::shared_ptr<SystemDefinition> sysdef,
                                            unsigned int num_vertices,
                                            const Scalar3* vertices,

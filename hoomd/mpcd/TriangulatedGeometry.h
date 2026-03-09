@@ -30,20 +30,6 @@ class TriangulatedGeometry
     /*!
      * \param sysdef System definition
      * \param num_vertices Number of vertices
-     * \param num_triangles Number of triangles
-     * \param unwrap_distance Distance to unwrap the triangles
-     * \param no_slip Boundary condition at the wall (slip or no-slip)
-     */
-    TriangulatedGeometry(std::shared_ptr<SystemDefinition> sysdef,
-                         unsigned int num_vertices,
-                         unsigned int num_triangles,
-                         const Scalar3 unwrap_distance,
-                         bool no_slip);
-
-    //! Constructor
-    /*!
-     * \param sysdef System definition
-     * \param num_vertices Number of vertices
      * \param vertices List of vertices
      * \param num_triangles Number of triangles
      * \param triangles List of triangles
