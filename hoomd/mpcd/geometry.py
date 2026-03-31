@@ -20,6 +20,8 @@ particles are allowed. These constraints will be documented by each object.
 
 """
 
+from abc import abstractmethod
+import hoomd
 from hoomd.data.parameterdicts import ParameterDict
 from hoomd.data.array import HOOMDArray, HOOMDGPUArray
 from hoomd.mpcd import _mpcd
@@ -519,7 +521,7 @@ class TriangulatedGeometry:
         plate = numpy.array([[0, 1, 3], [0, 2, 3]])
 
         triangulatedgeometry = hoomd.mpcd.geometry.TriangulatedGeometry(
-            sim, vertices, plate
+            simulation, vertices, plate, unwrap_distance=0.0
         )
 
     """
@@ -530,32 +532,50 @@ class TriangulatedGeometry:
 
     def __init__(self, simulation, vertices, triangles, unwrap_distance, no_slip=True):
         self._cpp_obj = _mpcd.TriangulatedGeometry(
-            simulation.state._cpp_sys_def, vertices, triangles, unwrap_distance, no_slip)
-        
+            simulation.state._cpp_sys_def, vertices, triangles, unwrap_distance, no_slip
+        )
+
     @property
     def num_vertices(self):
+        """int: Number of vertices."""
         return self._cpp_obj.num_vertices
-    
+
     @property
     def num_triangles(self):
+        """int: Number of triangles."""
         return self._cpp_obj.num_triangles
-    
+
     @property
     def unwrap_distance(self):
+        """float: Unwrap distance used for periodic boundaries."""
         return self._cpp_obj.unwrap_distance
-    
+
     @property
     def no_slip(self):
+        """bool: Boundary condition at the wall."""
         return self._cpp_obj.no_slip
-    
+
     @property
     def cpu_view(self):
-        return TriangulatedGeometryAccessHost(self)
-    
+        """TriangulatedGeometryAccessHost: CPU access to original geometry data."""
+        return TriangulatedGeometryAccessCPU(self, unwrapped=False)
+
+    @property
+    def cpu_unwrapped_view(self):
+        """TriangulatedGeometryAccessHost: CPU access to unwrapped geometry data."""
+        return TriangulatedGeometryAccessCPU(self, unwrapped=True)
+
     @property
     def gpu_view(self):
-        return TriangulatedGeometryAccessDevice(self)
-    
+        """TriangulatedGeometryAccessDevice: GPU access to original geometry data."""
+        return TriangulatedGeometryAccessGPU(self, unwrapped=False)
+
+    @property
+    def gpu_unwrapped_view(self):
+        """TriangulatedGeometryAccessDevice: GPU access to unwrapped geometry data."""
+        return TriangulatedGeometryAccessGPU(self, unwrapped=True)
+
+
 class TriangulatedGeometryAccessBase:
     r"""Base class for accessing triangulated geometry arrays."""
 
@@ -563,8 +583,18 @@ class TriangulatedGeometryAccessBase:
         "{inherited}", inspect.cleandoc(Geometry._doc_inherited)
     )
 
-    def __init__(self, geometry):
-        self._cpp_obj = self._cpp_cls(geometry._cpp_obj)
+    @property
+    @abstractmethod
+    def _cpp_cls(self):
+        pass
+
+    @property
+    @abstractmethod
+    def _array_cls(self):
+        pass
+
+    def __init__(self, geometry, unwrapped=False):
+        self._cpp_obj = self._cpp_cls(geometry._cpp_obj, unwrapped)
 
     def __enter__(self):
         self._state = self._cpp_obj.enter()
@@ -575,24 +605,47 @@ class TriangulatedGeometryAccessBase:
 
     @property
     def vertices(self):
+        """numpy.ndarray: Vertex array."""
         return numpy.asarray(self._cpp_obj.getVertices())
 
     @property
     def triangles(self):
+        """numpy.ndarray: Triangle array."""
         return numpy.asarray(self._cpp_obj.getTriangles())
 
 
-class TriangulatedGeometryAccessHost(TriangulatedGeometryAccessBase):
+class TriangulatedGeometryAccessCPU(TriangulatedGeometryAccessBase):
     """Access triangulated geometry data on the CPU."""
 
-    _cpp_cls = _mpcd.TriangulatedGeometryAccessHost
-    _array_cls = HOOMDArray
+    @property
+    def _cpp_cls(self):
+        return _mpcd.TriangulatedGeometryAccessHost
 
-class TriangulatedGeometryAccessDevice(TriangulatedGeometryAccessBase):
-    "Access triangulated geometry data on the GPU"
+    @property
+    def _array_cls(self):
+        return HOOMDArray
 
-    _cpp_cls = _mpcd.TriangulatedGeometryAccessDevice
-    _array_cls = HOOMDGPUArray
+
+if hoomd.version.gpu_enabled:
+
+    class TriangulatedGeometryAccessGPU(TriangulatedGeometryAccessBase):
+        """Access triangulated geometry data on the GPU"""
+
+        @property
+        def _cpp_cls(self):
+            return _mpcd.TriangulatedGeometryAccessDevice
+
+        @property
+        def _array_cls(self):
+            return HOOMDGPUArray
+
+else:
+    from hoomd.error import _NoGPU
+
+    class TriangulatedGeometryAccessGPU(_NoGPU):
+        """GPU data access is not available in CPU builds."""
+
+        pass
 
 
 __all__ = [
@@ -604,6 +657,6 @@ __all__ = [
     "PlanarPore",
     "Sphere",
     "TriangulatedGeometry",
-    "TriangulatedGeometryAccessHost",
-    "TriangulatedGeometryAccessDevice"
+    "TriangulatedGeometryAccessCPU",
+    "TriangulatedGeometryAccessGPU",
 ]

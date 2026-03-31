@@ -261,26 +261,31 @@ class TestSphere:
 
 class TestTriangulatedGeometry:
     def test_triangulated_geometry(self, simulation_factory, snap):
-        """Test that TriangulatedGeometry correctly stores vertex/triangle numbers."""
+        """Test that TriangulatedGeometry correctly stores data."""
         sim = simulation_factory(snap)
 
         vertices = np.array(
             [
-                [-10, 10, -10],
-                [-10, 10, 10],
-                [10, 10, -10],
-                [10, 10, 10],
-                [-10, -10, 10],
-                [-10, -10, -10],
-                [10, -10, 10],
-                [10, -10, -10],
+                [-5, 5, -5],
+                [-5, 5, 5],
+                [5, 5, -5],
+                [5, 5, 5],
+                [-5, -5, 5],
+                [-5, -5, -5],
+                [5, -5, 5],
+                [5, -5, -5],
             ]
         )
         triangles = np.array([[0, 1, 3], [0, 2, 3], [4, 5, 7], [4, 6, 7]], dtype=int)
 
-        geom = hoomd.mpcd.geometry.TriangulatedGeometry(sim, vertices, triangles, 
-                                                        unwrap_distance=(0.0, 0.0, 0.0),
-                                                        no_slip=True)
+        geom = hoomd.mpcd.geometry.TriangulatedGeometry(
+            sim, vertices, triangles, unwrap_distance=0, no_slip=True
+        )
+
+        assert geom.num_vertices == vertices.shape[0]
+        assert geom.num_triangles == triangles.shape[0]
+        assert geom.no_slip
+        assert geom.unwrap_distance == 0
 
         with geom.cpu_view as data:
             assert data.vertices.shape[0] == vertices.shape[0]
@@ -288,3 +293,44 @@ class TestTriangulatedGeometry:
 
             np.testing.assert_array_almost_equal(data.vertices, vertices)
             np.testing.assert_array_almost_equal(data.triangles, triangles)
+
+        with geom.cpu_unwrapped_view as data:
+            assert data.vertices.shape[0] == vertices.shape[0]
+            assert data.triangles.shape[0] == triangles.shape[0]
+
+            np.testing.assert_array_almost_equal(data.vertices, vertices)
+            np.testing.assert_array_almost_equal(data.triangles, triangles)
+
+    def test_unwrapped_triangulated_geometry(self, simulation_factory, snap):
+        """Test that TriangulatedGeometry correctly stores unwrapped data."""
+        sim = simulation_factory(snap)
+
+        vertices = np.array(
+            [
+                [-5, 5, -5],
+                [-5, 5, 5],
+                [5, 5, -5],
+                [5, 5, 5],
+            ]
+        )
+        triangles = np.array([[0, 1, 2], [0, 1, 3]], dtype=int)
+
+        geom = hoomd.mpcd.geometry.TriangulatedGeometry(
+            sim, vertices, triangles, unwrap_distance=1.0, no_slip=True
+        )
+
+        assert geom.num_vertices == vertices.shape[0]
+        assert geom.num_triangles == triangles.shape[0]
+        assert geom.no_slip
+        assert geom.unwrap_distance == 1.0
+
+        with geom.cpu_view as data:
+            assert data.vertices.shape[0] == vertices.shape[0]
+            assert data.triangles.shape[0] == triangles.shape[0]
+
+            np.testing.assert_array_almost_equal(data.vertices, vertices)
+            np.testing.assert_array_almost_equal(data.triangles, triangles)
+
+        with geom.cpu_unwrapped_view as data:
+            assert data.vertices.shape == (68, 3)
+            assert data.triangles.shape == (32, 3)

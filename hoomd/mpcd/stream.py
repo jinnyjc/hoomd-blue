@@ -349,6 +349,7 @@ class BounceBack(StreamingMethod):
             force = type(None)
         cls._cpp_cpp_class_map[geometry, force] = (module, cpp_class_name)
 
+
 class TriangulatedBounceBack(StreamingMethod):
     """Streaming with bounce-back rule for triangulated surfaces.
 
@@ -358,9 +359,9 @@ class TriangulatedBounceBack(StreamingMethod):
         mpcd_particle_force (BodyForce): Body force on MPCD particles.
 
     This streaming method reflects MPCD particles from a triangulated surface
-    using specular reflections (bounce-back) rules using either "slip" or 
+    using specular reflections (bounce-back) rules using either "slip" or
     "no-slip" hydrodynamic boundary conditions. The external force is only applied
-    to the particles ath the beginning and the end of this process.
+    to the particles at the beginning and the end of this process.
     """
 
     _cpp_class_map = {}
@@ -427,6 +428,7 @@ class TriangulatedBounceBack(StreamingMethod):
     @classmethod
     def _register_cpp_class(cls, force, module, class_name):
         cls._cpp_class_map[force] = (module, class_name)
+
 
 __all__ = [
     "BounceBack",

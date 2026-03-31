@@ -12,19 +12,19 @@ namespace hoomd
     {
 namespace mpcd
     {
-        
+
 TriangulatedGeometry::TriangulatedGeometry(std::shared_ptr<SystemDefinition> sysdef,
                                            unsigned int num_vertices,
                                            const Scalar3* vertices,
                                            unsigned int num_triangles,
                                            const uint3* triangles,
-                                           const Scalar3 unwrap_distance,
+                                           const Scalar unwrap_distance,
                                            bool no_slip)
     : m_sysdef(sysdef), m_exec_conf(m_sysdef->getParticleData()->getExecConf()),
       m_num_vertices(num_vertices), m_num_triangles(num_triangles),
+      m_num_total_vertices(num_vertices), m_num_total_triangles(num_triangles),
       m_vertices(m_num_vertices, m_exec_conf), m_triangles(m_num_triangles, m_exec_conf),
-      m_unwrap_distance(unwrap_distance), m_unwrapped_vertices(0, m_exec_conf),
-      m_unwrapped_triangles(0, m_exec_conf), m_no_slip(no_slip)
+      m_unwrap_distance(unwrap_distance), m_no_slip(no_slip)
     {
     if (m_num_vertices > 0)
         {
@@ -37,7 +37,7 @@ TriangulatedGeometry::TriangulatedGeometry(std::shared_ptr<SystemDefinition> sys
         ArrayHandle<uint3> h_triangles(m_triangles, access_location::host, access_mode::overwrite);
         std::copy(triangles, triangles + m_num_triangles, h_triangles.data);
         }
-    
+
     unwrapTriangles();
     }
 
@@ -51,6 +51,16 @@ unsigned int TriangulatedGeometry::getNumTriangles() const
     return m_num_triangles;
     }
 
+unsigned int TriangulatedGeometry::getNumTotalVertices() const
+    {
+    return m_num_total_vertices;
+    }
+
+unsigned int TriangulatedGeometry::getNumTotalTriangles() const
+    {
+    return m_num_total_triangles;
+    }
+
 const GPUArray<Scalar3>& TriangulatedGeometry::getVertices() const
     {
     return m_vertices;
@@ -61,29 +71,9 @@ const GPUArray<uint3>& TriangulatedGeometry::getTriangles() const
     return m_triangles;
     }
 
-const Scalar3 TriangulatedGeometry::getUnwrapDistance() const
+const Scalar TriangulatedGeometry::getUnwrapDistance() const
     {
     return m_unwrap_distance;
-    }
-
-unsigned int TriangulatedGeometry::getNumUnwrappedVertices() const
-    {
-    return m_num_unwrapped_vertices;
-    }
-
-unsigned int TriangulatedGeometry::getNumUnwrappedTriangles() const
-    {
-    return m_num_unwrapped_triangles;
-    }
-
-const GPUArray<Scalar3>& TriangulatedGeometry::getUnwrappedVertices() const
-    {
-    return m_unwrapped_vertices;
-    }
-
-const GPUArray<uint3>& TriangulatedGeometry::getUnwrappedTriangles() const
-    {
-    return m_unwrapped_triangles;
     }
 
 void TriangulatedGeometry::unwrapTriangles()
@@ -91,57 +81,115 @@ void TriangulatedGeometry::unwrapTriangles()
     const BoxDim box = m_sysdef->getParticleData()->getBox();
     const uchar3 periodic = box.getPeriodic();
 
-    const int nx = (periodic.x && m_unwrap_distance.x > Scalar(0.0)) ? 1 : 0;
-    const int ny = (periodic.y && m_unwrap_distance.y > Scalar(0.0)) ? 1 : 0;
-    const int nz = (periodic.z && m_unwrap_distance.z > Scalar(0.0)) ? 1 : 0;
+    const int nx = (periodic.x && m_unwrap_distance > Scalar(0.0)) ? 1 : 0;
+    const int ny = (periodic.y && m_unwrap_distance > Scalar(0.0)) ? 1 : 0;
+    const int nz = (periodic.z && m_unwrap_distance > Scalar(0.0)) ? 1 : 0;
 
-    const unsigned int n_images = 
-        static_cast<unsigned int>((2 * nx + 1) * (2 * ny + 1) * (2 * nz + 1));
+    std::vector<Scalar3> extra_vertices;
+    std::vector<uint3> extra_triangles;
 
-    m_num_unwrapped_vertices = m_num_vertices * n_images;
-    m_num_unwrapped_triangles = m_num_triangles * n_images;
-
-    m_unwrapped_vertices.resize(m_num_unwrapped_vertices);
-    m_unwrapped_triangles.resize(m_num_unwrapped_triangles);
-
-    ArrayHandle<Scalar3> h_base_vertices(m_vertices, access_location::host, access_mode::read);
-    ArrayHandle<uint3> h_base_triangles(m_triangles, access_location::host, access_mode::read);
-
-    ArrayHandle<Scalar3> h_unwrapped_vertices(m_unwrapped_vertices, access_location::host, access_mode::overwrite);
-    ArrayHandle<uint3> h_unwrapped_triangles(m_unwrapped_triangles, access_location::host, access_mode::overwrite);
-
-    unsigned int img = 0;
-    for (int i = -nx; i <= nx; ++i)
         {
-        for (int j = -ny; j <= ny; ++j)
+        ArrayHandle<Scalar3> h_base_vertices(m_vertices, access_location::host, access_mode::read);
+        ArrayHandle<uint3> h_base_triangles(m_triangles, access_location::host, access_mode::read);
+
+        const Scalar3 ghost_width
+            = make_scalar3(m_unwrap_distance, m_unwrap_distance, m_unwrap_distance);
+
+        for (int i = -nx; i <= nx; ++i)
             {
-            for (int k = -nz; k <= nz; ++k)
+            for (int j = -ny; j <= ny; ++j)
                 {
-                const int3 s = make_int3(i, j ,k);
-                const Scalar3 shift = box.shift(make_scalar3(0, 0, 0), s);
-
-                const unsigned int v_off = img * m_num_vertices;
-                const unsigned int t_off = img * m_num_triangles;
-
-                for (unsigned vi = 0; vi < m_num_vertices; ++vi)
+                for (int k = -nz; k <= nz; ++k)
                     {
-                    const Scalar3 vv = h_base_vertices.data[vi];
-                    h_unwrapped_vertices.data[v_off + vi] =
-                        make_scalar3(vv.x + shift.x, vv.y +shift.y, vv.z +shift.z);
-                    }
+                    // skip the original image
+                    if (i == 0 && j == 0 && k == 0)
+                        continue;
 
-                for (unsigned ti = 0; ti < m_num_triangles; ++ti)
-                    {
-                    const uint3 tt = h_base_triangles.data[ti];
-                    h_unwrapped_triangles.data[t_off + ti] =
-                        make_uint3(tt.x + v_off, tt.y + v_off, tt.z + v_off);
-                    }
+                    const int3 image = make_int3(i, j, k);
 
-                ++ img;
+                    // for each image, unwrap all the vertices and check if they are inside of
+                    // the box expanded by unwrap_distance
+                    std::vector<Scalar3> shifted_vertices(m_num_vertices);
+                    std::vector<bool> in_buffer(m_num_vertices, false);
+
+                    for (unsigned vi = 0; vi < m_num_vertices; ++vi)
+                        {
+                        const Scalar3 vv = h_base_vertices.data[vi];
+
+                        const Scalar3 shifted = box.shift(vv, image);
+                        shifted_vertices[vi] = shifted;
+
+                        const Scalar3 f = box.makeFraction(shifted, ghost_width);
+
+                        in_buffer[vi]
+                            = (f.x >= Scalar(0.0) && f.x <= Scalar(1.0) && f.y >= Scalar(0.0)
+                               && f.y <= Scalar(1.0) && f.z >= Scalar(0.0) && f.z <= Scalar(1.0));
+                        }
+
+                    // build a compact vertex list
+                    std::map<unsigned int, unsigned int> vertex_map;
+                    for (unsigned ti = 0; ti < m_num_triangles; ++ti)
+                        {
+                        const uint3 tt = h_base_triangles.data[ti];
+
+                        // skip if none of the vertex is in buffer
+                        if (!in_buffer[tt.x] && !in_buffer[tt.y] && !in_buffer[tt.z])
+                            continue;
+
+                        const unsigned int old_idx[3] = {tt.x, tt.y, tt.z};
+                        unsigned int new_idx[3];
+
+                        for (unsigned int m = 0; m < 3; ++m)
+                            {
+                            auto entry = vertex_map.find(old_idx[m]);
+                            if (entry == vertex_map.end())
+                                {
+                                const unsigned int idx
+                                    = static_cast<unsigned int>(extra_vertices.size());
+                                extra_vertices.push_back(shifted_vertices[old_idx[m]]);
+                                vertex_map[old_idx[m]] = idx;
+                                new_idx[m] = idx;
+                                }
+                            else
+                                {
+                                new_idx[m] = entry->second;
+                                }
+                            }
+                        extra_triangles.push_back(make_uint3(new_idx[0], new_idx[1], new_idx[2]));
+                        }
+                    }
                 }
             }
         }
+    m_num_total_vertices = m_num_vertices + static_cast<unsigned int>(extra_vertices.size());
+    m_num_total_triangles = m_num_triangles + static_cast<unsigned int>(extra_triangles.size());
+
+    m_vertices.resize(m_num_total_vertices);
+    m_triangles.resize(m_num_total_triangles);
+
+    // append extra unwrapped to original
+    if (extra_vertices.size() > 0)
+        {
+        ArrayHandle<Scalar3> h_vertices(m_vertices, access_location::host, access_mode::overwrite);
+        for (unsigned int vi = 0; vi < extra_vertices.size(); ++vi)
+            {
+            h_vertices.data[vi + m_num_vertices] = extra_vertices[vi];
+            }
+        }
+
+    if (extra_triangles.size() > 0)
+        {
+        ArrayHandle<uint3> h_triangles(m_triangles, access_location::host, access_mode::overwrite);
+        for (unsigned int ti = 0; ti < extra_triangles.size(); ++ti)
+            {
+            const uint3 tri = extra_triangles[ti];
+            h_triangles.data[m_num_triangles + ti] = make_uint3(tri.x + m_num_vertices,
+                                                                tri.y + m_num_vertices,
+                                                                tri.z + m_num_vertices);
+            }
+        }
     }
+
 bool TriangulatedGeometry::getNoSlip() const
     {
     return m_no_slip;
@@ -160,7 +208,7 @@ void export_TriangulatedGeometry(pybind11::module& m)
                    vertices,
                pybind11::array_t<unsigned int,
                                  pybind11::array::c_style | pybind11::array::forcecast> triangles,
-               pybind11::object unwrap_distance_obj,
+               Scalar unwrap_distance,
                bool no_slip)
             {
                 if (vertices.shape(1) != 3)
@@ -186,13 +234,6 @@ void export_TriangulatedGeometry(pybind11::module& m)
                 for (unsigned int i = 0; i < num_triangles; ++i)
                     t[i] = make_uint3(t_in(i, 0), t_in(i, 1), t_in(i, 2));
 
-                
-                pybind11::sequence seq = unwrap_distance_obj.cast<pybind11::sequence>();
-                const Scalar3 unwrap_distance = make_scalar3(
-                    seq[0].cast<Scalar>(),
-                    seq[1].cast<Scalar>(),
-                    seq[2].cast<Scalar>());
-
                 return std::make_shared<TriangulatedGeometry>(sysdef,
                                                               num_vertices,
                                                               v.data(),
@@ -203,8 +244,20 @@ void export_TriangulatedGeometry(pybind11::module& m)
             }))
         .def_property_readonly("num_vertices", &TriangulatedGeometry::getNumVertices)
         .def_property_readonly("num_triangles", &TriangulatedGeometry::getNumTriangles)
+        .def_property_readonly("unwrap_distance", &TriangulatedGeometry::getUnwrapDistance)
         .def_property_readonly("no_slip", &TriangulatedGeometry::getNoSlip);
     }
+
+void export_TriangulatedGeometryAccessHost(pybind11::module& m)
+    {
+    export_TriangulatedGeometryAccess<HOOMDHostBuffer>(m, "TriangulatedGeometryAccessHost");
+    }
+
+void export_TriangulatedGeometryAccessDevice(pybind11::module& m)
+    {
+    export_TriangulatedGeometryAccess<HOOMDDeviceBuffer>(m, "TriangulatedGeometryAccessDevice");
+    }
+
     } // end namespace detail
     } // end namespace mpcd
     } // end namespace hoomd

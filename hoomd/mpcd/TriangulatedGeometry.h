@@ -41,55 +41,61 @@ class TriangulatedGeometry
                          const Scalar3* vertices,
                          unsigned int num_triangles,
                          const uint3* triangles,
-                         const Scalar3 unwrap_distance,
+                         const Scalar unwrap_distance,
                          bool no_slip);
 
+    //! Get the number of original vertices
     unsigned int getNumVertices() const;
+
+    //! Get the number of original triangles
     unsigned int getNumTriangles() const;
 
+    //! Get the number of total vertices (original + unwrapped)
+    unsigned int getNumTotalVertices() const;
+
+    //! Get the number of total triangles (original + unwrapped)
+    unsigned int getNumTotalTriangles() const;
+
+    //! Get the vertex list
     const GPUArray<Scalar3>& getVertices() const;
+
+    //! Get the triangle list
     const GPUArray<uint3>& getTriangles() const;
-    
-    const Scalar3 getUnwrapDistance() const;
 
-    unsigned int getNumUnwrappedVertices() const;
-    unsigned int getNumUnwrappedTriangles() const;
+    //! Get the unwrap distance
+    const Scalar getUnwrapDistance() const;
 
-    const GPUArray<Scalar3>& getUnwrappedVertices() const;
-    const GPUArray<uint3>& getUnwrappedTriangles() const;
-
+    //! Get the wall boundary condition
     bool getNoSlip() const;
 
     private:
+    std::shared_ptr<SystemDefinition> m_sysdef;                //!< System definition
+    std::shared_ptr<const ExecutionConfiguration> m_exec_conf; //!< Execution configuration
+
+    unsigned int m_num_vertices;  //!< Number of original vertices
+    unsigned int m_num_triangles; //!< Number of original triangles
+
+    unsigned int m_num_total_vertices;  //!< Number of total vertices
+    unsigned int m_num_total_triangles; //!< Number of total triangles
+
+    GPUArray<Scalar3> m_vertices; //!< Vertex list
+    GPUArray<uint3> m_triangles;  //!< Triangle list
+
+    const Scalar m_unwrap_distance; //!< Distance used to unwrap triangles
+
+    bool m_no_slip; //!< Boundary condition
+
+    //! Unwrap the triangles in unwrap distance
     void unwrapTriangles();
-
-    std::shared_ptr<SystemDefinition> m_sysdef;
-    std::shared_ptr<const ExecutionConfiguration> m_exec_conf;
-
-    unsigned int m_num_vertices;
-    unsigned int m_num_triangles;
-
-    GPUArray<Scalar3> m_vertices;
-    GPUArray<uint3> m_triangles;
-
-    const Scalar3 m_unwrap_distance;
-
-    unsigned int m_num_unwrapped_vertices;
-    unsigned int m_num_unwrapped_triangles;
-
-    GPUArray<Scalar3> m_unwrapped_vertices;
-    GPUArray<uint3> m_unwrapped_triangles;
-
-    bool m_no_slip;
     };
 
 template<class Output>
 class TriangulatedGeometryAccess : public LocalDataAccess<Output, TriangulatedGeometry>
     {
     public:
-    TriangulatedGeometryAccess(TriangulatedGeometry& geometry)
+    TriangulatedGeometryAccess(TriangulatedGeometry& geometry, bool unwrapped = false)
         : LocalDataAccess<Output, TriangulatedGeometry>(geometry), m_vertices_handle(),
-          m_triangles_handle()
+          m_triangles_handle(), m_unwrapped(unwrapped)
         {
         }
 
@@ -97,20 +103,22 @@ class TriangulatedGeometryAccess : public LocalDataAccess<Output, TriangulatedGe
 
     Output getVertices()
         {
-        return this->template getBuffer<Scalar3, Scalar>(
-            m_vertices_handle,
-            &TriangulatedGeometry::getVertices,
-            std::vector<size_t> {this->m_data.getNumVertices(), 3},
-            false);
+        const size_t n
+            = m_unwrapped ? this->m_data.getNumTotalVertices() : this->m_data.getNumVertices();
+        return this->template getBuffer<Scalar3, Scalar>(m_vertices_handle,
+                                                         &TriangulatedGeometry::getVertices,
+                                                         std::vector<size_t> {n, 3},
+                                                         false);
         }
 
     Output getTriangles()
         {
-        return this->template getBuffer<uint3, uint>(
-            m_triangles_handle,
-            &TriangulatedGeometry::getTriangles,
-            std::vector<size_t> {this->m_data.getNumTriangles(), 3},
-            false);
+        const size_t n
+            = m_unwrapped ? this->m_data.getNumTotalTriangles() : this->m_data.getNumTriangles();
+        return this->template getBuffer<uint3, uint>(m_triangles_handle,
+                                                     &TriangulatedGeometry::getTriangles,
+                                                     std::vector<size_t> {n, 3},
+                                                     false);
         }
 
     protected:
@@ -123,18 +131,21 @@ class TriangulatedGeometryAccess : public LocalDataAccess<Output, TriangulatedGe
     private:
     std::unique_ptr<ArrayHandle<Scalar3>> m_vertices_handle;
     std::unique_ptr<ArrayHandle<uint3>> m_triangles_handle;
+    bool m_unwrapped;
     };
 
 namespace detail
     {
 void export_TriangulatedGeometry(pybind11::module& m);
-;
-/// Export local access
+void export_TriangulatedGeometryAccessHost(pybind11::module& m);
+void export_TriangulatedGeometryAccessDevice(pybind11::module& m);
+
+//! Export local access
 template<class Output> void export_TriangulatedGeometryAccess(pybind11::module& m, std::string name)
     {
     pybind11::class_<TriangulatedGeometryAccess<Output>,
                      std::shared_ptr<TriangulatedGeometryAccess<Output>>>(m, name.c_str())
-        .def(pybind11::init<TriangulatedGeometry&>())
+        .def(pybind11::init<TriangulatedGeometry&, bool>())
         .def("getVertices", &TriangulatedGeometryAccess<Output>::getVertices)
         .def("getTriangles", &TriangulatedGeometryAccess<Output>::getTriangles)
         .def("enter", &TriangulatedGeometryAccess<Output>::enter)
