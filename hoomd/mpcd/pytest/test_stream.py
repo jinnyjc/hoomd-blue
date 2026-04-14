@@ -1390,7 +1390,7 @@ class TestTriangulatedGeometry:
                 [5, -4, 5],
             ]
         )
-        triangles = np.array([[0, 1, 3], [0, 2, 3], [4, 5, 7], [4, 6, 7]], dtype=int)
+        triangles = np.array([[0, 1, 3], [0, 3, 2], [4, 7, 5], [4, 6, 7]], dtype=int)
 
         sm = hoomd.mpcd.stream.TriangulatedBounceBack(
             period=1,
@@ -1436,13 +1436,13 @@ class TestTriangulatedGeometry:
         triangles = np.array(
             [
                 [3, 4, 7],
-                [3, 4, 5],
+                [3, 5, 4],
                 [2, 4, 5],
-                [2, 4, 8],
+                [2, 8, 4],
                 [0, 4, 8],
-                [0, 4, 6],
+                [0, 6, 4],
                 [1, 4, 6],
-                [1, 4, 7],
+                [1, 7, 4],
             ],
             dtype=int,
         )

@@ -276,7 +276,7 @@ class TestTriangulatedGeometry:
                 [5, -5, -5],
             ]
         )
-        triangles = np.array([[0, 1, 3], [0, 2, 3], [4, 5, 7], [4, 6, 7]], dtype=int)
+        triangles = np.array([[0, 1, 3], [0, 3, 2], [4, 7, 5], [4, 6, 7]], dtype=int)
 
         geom = hoomd.mpcd.geometry.TriangulatedGeometry(
             sim, vertices, triangles, unwrap_distance=0, no_slip=True
@@ -313,7 +313,7 @@ class TestTriangulatedGeometry:
                 [5, 5, 5],
             ]
         )
-        triangles = np.array([[0, 1, 2], [0, 1, 3]], dtype=int)
+        triangles = np.array([[0, 1, 3], [0, 3, 2]], dtype=int)
 
         geom = hoomd.mpcd.geometry.TriangulatedGeometry(
             sim, vertices, triangles, unwrap_distance=1.0, no_slip=True

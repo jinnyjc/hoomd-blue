@@ -271,7 +271,7 @@ template<class Force> void TriangulatedGeometryStreamingMethod<Force>::stream(ui
             unsigned int best_tri = 0;
 
             const unsigned int num_triangles = m_geom->getNumTotalTriangles();
-            const Scalar eps = Scalar(1e-8);
+            const Scalar eps = Scalar(1e-12);
 
             for (unsigned int cur_tri = 0; cur_tri < num_triangles; ++cur_tri)
                 {
@@ -280,6 +280,15 @@ template<class Force> void TriangulatedGeometryStreamingMethod<Force>::stream(ui
                 const Scalar3 a(h_vertices.data[triangles.x]);
                 const Scalar3 b(h_vertices.data[triangles.y]);
                 const Scalar3 c(h_vertices.data[triangles.z]);
+
+                // calculate normal vector of triangle
+                const Scalar3 e1 = b - a;
+                const Scalar3 e2 = c - a;
+                const Scalar3 n = cross(e1, e2);
+
+                // exclude particles moving away from the triangle
+                if (dot(vel_v, n) <= Scalar(0))
+                    continue;
 
                 // find intersection
                 Scalar t_hit;
@@ -313,10 +322,6 @@ template<class Force> void TriangulatedGeometryStreamingMethod<Force>::stream(ui
 
                 // backtrack the particle for dt to get to point of contact
                 pos_v += vel_v * best_t;
-
-                // adjust the normal against velocity
-                if (dot(vel_v, n_unit) > Scalar(0))
-                    n_unit = -n_unit;
 
                 // apply boundary condition
                 if (m_geom->getNoSlip())
