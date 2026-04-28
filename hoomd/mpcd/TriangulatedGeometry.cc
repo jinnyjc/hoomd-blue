@@ -39,6 +39,8 @@ TriangulatedGeometry::TriangulatedGeometry(std::shared_ptr<SystemDefinition> sys
         }
 
     unwrapTriangles();
+    buildTriangleAABBs();
+    buildTree();
     }
 
 unsigned int TriangulatedGeometry::getNumVertices() const
@@ -74,6 +76,16 @@ const GPUArray<uint3>& TriangulatedGeometry::getTriangles() const
 const Scalar TriangulatedGeometry::getUnwrapDistance() const
     {
     return m_unwrap_distance;
+    }
+
+bool TriangulatedGeometry::getNoSlip() const
+    {
+    return m_no_slip;
+    }
+
+const hoomd::detail::AABBTree& TriangulatedGeometry::getTriangleTree() const
+    {
+    return m_triangle_tree;
     }
 
 void TriangulatedGeometry::unwrapTriangles()
@@ -190,9 +202,41 @@ void TriangulatedGeometry::unwrapTriangles()
         }
     }
 
-bool TriangulatedGeometry::getNoSlip() const
+void TriangulatedGeometry::buildTriangleAABBs()
     {
-    return m_no_slip;
+    m_triangle_aabbs.clear();
+    m_triangle_aabbs.resize(m_num_total_triangles);
+
+    ArrayHandle<Scalar3> h_vertices(m_vertices, access_location::host, access_mode::read);
+    ArrayHandle<uint3> h_triangles(m_triangles, access_location::host, access_mode::read);
+
+    // build AABB for all triangles including unwrapped triangles
+    for (unsigned int ti = 0; ti < m_num_total_triangles; ++ti)
+        {
+        const uint3 tri = h_triangles.data[ti];
+
+        const Scalar3 a = h_vertices.data[tri.x];
+        const Scalar3 b = h_vertices.data[tri.y];
+        const Scalar3 c = h_vertices.data[tri.z];
+
+        const Scalar3 lower = make_scalar3(std::min(a.x, std::min(b.x, c.x)),
+                                           std::min(a.y, std::min(b.y, c.y)),
+                                           std::min(a.z, std::min(b.z, c.z)));
+
+        const Scalar3 upper = make_scalar3(std::max(a.x, std::max(b.x, c.x)),
+                                           std::max(a.y, std::max(b.y, c.y)),
+                                           std::max(a.z, std::max(b.z, c.z)));
+
+        m_triangle_aabbs[ti] = hoomd::detail::AABB(vec3<Scalar>(lower.x, lower.y, lower.z),
+                                                   vec3<Scalar>(upper.x, upper.y, upper.z));
+        m_triangle_aabbs[ti].tag = ti;
+        }
+    }
+
+void TriangulatedGeometry::buildTree()
+    {
+    std::vector<hoomd::detail::AABB> aabbs(m_triangle_aabbs.begin(), m_triangle_aabbs.end());
+    m_triangle_tree.buildTree(aabbs.data(), m_num_total_triangles);
     }
 
 namespace detail

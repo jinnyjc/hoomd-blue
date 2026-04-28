@@ -9,6 +9,7 @@
 #ifndef MPCD_TRIANGULATED_GEOMETRY_H_
 #define MPCD_TRIANGULATED_GEOMETRY_H_
 
+#include "hoomd/AABBTree.h"
 #include "hoomd/BoxDim.h"
 #include "hoomd/ExecutionConfiguration.h"
 #include "hoomd/GPUArray.h"
@@ -68,6 +69,9 @@ class TriangulatedGeometry
     //! Get the wall boundary condition
     bool getNoSlip() const;
 
+    //! Get triangle BVH Tree
+    const hoomd::detail::AABBTree& getTriangleTree() const;
+
     private:
     std::shared_ptr<SystemDefinition> m_sysdef;                //!< System definition
     std::shared_ptr<const ExecutionConfiguration> m_exec_conf; //!< Execution configuration
@@ -85,8 +89,17 @@ class TriangulatedGeometry
 
     bool m_no_slip; //!< Boundary condition
 
+    std::vector<hoomd::detail::AABB> m_triangle_aabbs; //!< AABBs for triangles
+    hoomd::detail::AABBTree m_triangle_tree;           //!< BVH for triangles
+
     //! Unwrap the triangles in unwrap distance
     void unwrapTriangles();
+
+    //! build one AABB for each total triangle
+    void buildTriangleAABBs();
+
+    //! build the BVH over all triangles
+    void buildTree();
     };
 
 template<class Output>

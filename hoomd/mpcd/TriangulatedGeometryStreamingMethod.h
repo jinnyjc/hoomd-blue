@@ -139,6 +139,29 @@ inline bool intersectTriangle(const Scalar3& pos_v,
     return true;
     }
 
+//! Build an AABB enclosing a particle path segment
+/*!
+ * This builds the axis-aligned bounding box enclosing the particle path from
+ * \a pos to \a pos + vel * dt.
+ *
+ * \param pos Particle position
+ * \param vel Particle direction
+ * \param dt Remaining timestep
+ */
+inline hoomd::detail::AABB makePathAABB(const Scalar3& pos, const Scalar3& vel, const Scalar dt)
+    {
+    const Scalar3 pos_end = pos + dt * vel;
+    const Scalar3 lower = make_scalar3(std::min(pos.x, pos_end.x),
+                                       std::min(pos.y, pos_end.y),
+                                       std::min(pos.z, pos_end.z));
+    const Scalar3 upper = make_scalar3(std::max(pos.x, pos_end.x),
+                                       std::max(pos.y, pos_end.y),
+                                       std::max(pos.z, pos_end.z));
+
+    return hoomd::detail::AABB(vec3<Scalar>(lower.x, lower.y, lower.z),
+                               vec3<Scalar>(upper.x, upper.y, upper.z));
+    }
+
 //! MPCD confined streaming method
 /*!
  * This method implements the base version of ballistic propagation of MPCD
@@ -245,6 +268,9 @@ template<class Force> void TriangulatedGeometryStreamingMethod<Force>::stream(ui
     // default construct a force if one is not set
     const Force force = (m_force) ? *m_force : Force();
 
+    // triangle candidates through candidates
+    std::vector<unsigned int> candidate_triangles;
+
     for (unsigned int cur_p = 0; cur_p < m_mpcd_pdata->getN(); ++cur_p)
         {
         const Scalar4 postype = h_pos.data[cur_p];
@@ -269,11 +295,14 @@ template<class Force> void TriangulatedGeometryStreamingMethod<Force>::stream(ui
             // to keep the earliest hit
             Scalar best_t = dt_remain;
             unsigned int best_tri = 0;
-
-            const unsigned int num_triangles = m_geom->getNumTotalTriangles();
             const Scalar eps = Scalar(1e-12);
 
-            for (unsigned int cur_tri = 0; cur_tri < num_triangles; ++cur_tri)
+            // broad search: query candidate triangles overlapping the particle path AABB
+            candidate_triangles.clear();
+            const hoomd::detail::AABB path_aabb = makePathAABB(pos_v, vel_v, dt_remain);
+            m_geom->getTriangleTree().query(candidate_triangles, path_aabb);
+
+            for (const auto cur_tri : candidate_triangles)
                 {
                 const uint3 triangles = h_triangles.data[cur_tri];
 
@@ -290,7 +319,7 @@ template<class Force> void TriangulatedGeometryStreamingMethod<Force>::stream(ui
                 if (dot(vel_v, n) <= Scalar(0))
                     continue;
 
-                // find intersection
+                // narrow search: exact ray-triangle intersection
                 Scalar t_hit;
                 if (!intersectTriangle(pos_v, vel_v, a, b, c, dt_remain, eps, t_hit))
                     continue;
@@ -305,7 +334,7 @@ template<class Force> void TriangulatedGeometryStreamingMethod<Force>::stream(ui
 
             if (found)
                 {
-                // triangle that produce earliest hit
+                // retrieve the triangle that produces earliest hit
                 const uint3 triangle = h_triangles.data[best_tri];
 
                 const Scalar3 a(h_vertices.data[triangle.x]);
