@@ -162,7 +162,7 @@ inline hoomd::detail::AABB makePathAABB(const Scalar3& pos, const Scalar3& vel, 
                                vec3<Scalar>(upper.x, upper.y, upper.z));
     }
 
-//! MPCD confined streaming method
+//! MPCD triangulated geometry streaming method
 /*!
  * This method implements the base version of ballistic propagation of MPCD
  * particles in confined triangulated geometries.

@@ -85,6 +85,11 @@ void export_BulkStreamingMethodBlockForceGPU(pybind11::module&);
 void export_BulkStreamingMethodConstantForceGPU(pybind11::module&);
 void export_BulkStreamingMethodNoForceGPU(pybind11::module&);
 void export_BulkStreamingMethodSineForceGPU(pybind11::module&);
+
+void export_TriangulatedGeometryStreamingMethodBlockForceGPU(pybind11::module&);
+void export_TriangulatedGeometryStreamingMethodConstantForceGPU(pybind11::module&);
+void export_TriangulatedGeometryStreamingMethodNoForceGPU(pybind11::module&);
+void export_TriangulatedGeometryStreamingMethodSineForceGPU(pybind11::module&);
 #endif // ENABLE_HIP
 
 // concentric cylinders
@@ -268,6 +273,10 @@ PYBIND11_MODULE(_mpcd, m)
     export_BulkStreamingMethodConstantForceGPU(m);
     export_BulkStreamingMethodNoForceGPU(m);
     export_BulkStreamingMethodSineForceGPU(m);
+    export_TriangulatedGeometryStreamingMethodBlockForceGPU(m);
+    export_TriangulatedGeometryStreamingMethodConstantForceGPU(m);
+    export_TriangulatedGeometryStreamingMethodNoForceGPU(m);
+    export_TriangulatedGeometryStreamingMethodSineForceGPU(m);
 #endif // ENABLE_HIP
 
     // concentric cylinders
