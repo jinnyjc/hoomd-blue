@@ -357,11 +357,19 @@ class TriangulatedBounceBack(StreamingMethod):
         period (int): Number of integration steps covered by streaming step.
         geometry (hoomd.mpcd.geometry.TriangulatedGeometry): Triangulated geometry.
         mpcd_particle_force (BodyForce): Body force on MPCD particles.
+        max_bounce (int): Maximum number of bounces per particle in a single streaming
+            step.
+
 
     This streaming method reflects MPCD particles from a triangulated surface
     using specular reflections (bounce-back) rules using either "slip" or
     "no-slip" hydrodynamic boundary conditions. The external force is only applied
     to the particles at the beginning and the end of this process.
+
+    A particle may bounce off the surface several times within one streaming step.
+    `max_bounce` caps the number of such bounces to prevent infinite collision loops
+    caused by a triangulated geometry that is not closed or has incorrect triangle
+    orientation.
     """
 
     _cpp_class_map = {}
@@ -371,10 +379,12 @@ class TriangulatedBounceBack(StreamingMethod):
         + inspect.cleandoc(StreamingMethod._doc_inherited)
     )
 
-    def __init__(self, period, geometry, mpcd_particle_force=None):
+    def __init__(self, period, geometry, mpcd_particle_force=None, max_bounce=100):
         super().__init__(period, mpcd_particle_force)
 
-        param_dict = ParameterDict(geometry=TriangulatedGeometry)
+        param_dict = ParameterDict(
+            geometry=TriangulatedGeometry, max_bounce=int(max_bounce)
+        )
         param_dict["geometry"] = geometry
         self._param_dict.update(param_dict)
 
@@ -414,6 +424,7 @@ class TriangulatedBounceBack(StreamingMethod):
             0,
             self.geometry._cpp_obj,
             mpcd_particle_force,
+            self.max_bounce,
         )
 
         super()._attach_hook()

@@ -46,13 +46,15 @@ class PYBIND11_EXPORT TriangulatedGeometryStreamingMethodGPU
                                            unsigned int period,
                                            int phase,
                                            std::shared_ptr<TriangulatedGeometry> geom,
-                                           std::shared_ptr<Force> force)
+                                           std::shared_ptr<Force> force,
+                                           unsigned int max_bounce)
         : mpcd::TriangulatedGeometryStreamingMethod<Force>(sysdef,
                                                            cur_timestep,
                                                            period,
                                                            phase,
                                                            geom,
-                                                           force),
+                                                           force,
+                                                           max_bounce),
           m_lbvh_valid(false), m_num_active(this->m_exec_conf)
         {
         m_lbvh.reset(new gpu::TriangleLBVHWrapper());
@@ -229,6 +231,7 @@ template<class Force> void TriangulatedGeometryStreamingMethodGPU<Force>::stream
     unsigned int* cur_active = d_active_idx.data;
     unsigned int* next_active = d_next_active_idx.data;
     unsigned int h_num_active = N;
+    unsigned int bounce = 0;
 
     do
         {
@@ -276,7 +279,15 @@ template<class Force> void TriangulatedGeometryStreamingMethodGPU<Force>::stream
         h_num_active = m_num_active.readFlags();
 
         std::swap(cur_active, next_active);
-        } while (h_num_active > 0);
+        ++bounce;
+        } while (h_num_active > 0 && bounce < this->m_max_bounce);
+
+    if (h_num_active > 0)
+        {
+        throw std::runtime_error("Particle did not finish collision after "
+                                 + std::to_string(this->m_max_bounce)
+                                 + " bounces. Check the triangulated geometry");
+        }
 
     // Step 3: finalize
     m_finalize_tuner->begin();
@@ -308,7 +319,8 @@ template<class Force> void export_TriangulatedGeometryStreamingMethodGPU(pybind1
                             unsigned int,
                             int,
                             std::shared_ptr<TriangulatedGeometry>,
-                            std::shared_ptr<Force>>());
+                            std::shared_ptr<Force>,
+                            unsigned int>());
     }
     } // end namespace detail
     } // end namespace mpcd

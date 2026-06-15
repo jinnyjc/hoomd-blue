@@ -188,14 +188,17 @@ class PYBIND11_EXPORT TriangulatedGeometryStreamingMethod : public mpcd::Streami
      * \param phase Phase shift for periodic updates
      * \param geom Streaming geometry
      * \param force Solvent force
+     * \param max_bounce Maximum number of bounces per streaming step
      */
     TriangulatedGeometryStreamingMethod(std::shared_ptr<SystemDefinition> sysdef,
                                         unsigned int cur_timestep,
                                         unsigned int period,
                                         int phase,
                                         std::shared_ptr<TriangulatedGeometry> geom,
-                                        std::shared_ptr<Force> force)
-        : mpcd::StreamingMethod(sysdef, cur_timestep, period, phase), m_geom(geom), m_force(force)
+                                        std::shared_ptr<Force> force,
+                                        unsigned int max_bounce)
+        : mpcd::StreamingMethod(sysdef, cur_timestep, period, phase), m_geom(geom), m_force(force),
+          m_max_bounce(max_bounce)
         {
         }
 
@@ -226,9 +229,20 @@ class PYBIND11_EXPORT TriangulatedGeometryStreamingMethod : public mpcd::Streami
         m_force = force;
         }
 
+    unsigned int getMaxBounce() const
+        {
+        return m_max_bounce;
+        }
+
+    void setMaxBounce(unsigned int max_bounce)
+        {
+        m_max_bounce = max_bounce;
+        }
+
     protected:
     std::shared_ptr<TriangulatedGeometry> m_geom; //!< Triangulated geometry
     std::shared_ptr<Force> m_force;               //!< Solvent force
+    unsigned int m_max_bounce;                    //!< Maximum number of bounces per streaming step
     };
 
 /*!
@@ -285,6 +299,7 @@ template<class Force> void TriangulatedGeometryStreamingMethod<Force>::stream(ui
         // propagate the particle to its new position ballistically
         Scalar dt_remain = m_mpcd_dt;
         bool collide = true;
+        unsigned int bounce = 0;
 
         Scalar3 pos_v(pos);
         Scalar3 vel_v(vel);
@@ -371,7 +386,15 @@ template<class Force> void TriangulatedGeometryStreamingMethod<Force>::stream(ui
                 dt_remain = Scalar(0);
                 collide = false;
                 }
-            } while (dt_remain > 0 && collide);
+            ++bounce;
+            } while (dt_remain > 0 && collide && bounce < m_max_bounce);
+
+        if (dt_remain > Scalar(0))
+            {
+            throw std::runtime_error("Particle did not finish collision after "
+                                     + std::to_string(m_max_bounce)
+                                     + " bounces. Check the triangulated geometry");
+            }
 
         // finalize velocity update
         pos = pos_v;
@@ -410,11 +433,14 @@ template<class Force> void export_TriangulatedGeometryStreamingMethod(pybind11::
                             unsigned int,
                             int,
                             std::shared_ptr<TriangulatedGeometry>,
-                            std::shared_ptr<Force>>())
+                            std::shared_ptr<Force>,
+                            unsigned int>())
         .def_property_readonly("geometry",
                                &mpcd::TriangulatedGeometryStreamingMethod<Force>::getGeometry)
         .def_property_readonly("mpcd_particle_force",
-                               &mpcd::TriangulatedGeometryStreamingMethod<Force>::getForce);
+                               &mpcd::TriangulatedGeometryStreamingMethod<Force>::getForce)
+        .def_property_readonly("max_bounce",
+                               &mpcd::TriangulatedGeometryStreamingMethod<Force>::getMaxBounce);
     }
     } // end namespace detail
     } // end namespace mpcd
