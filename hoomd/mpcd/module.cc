@@ -49,6 +49,9 @@ void export_SphereGeometryFiller(pybind11::module&);
 void export_SineForce(pybind11::module&);
 void export_SRDCollisionMethod(pybind11::module&);
 void export_StreamingMethod(pybind11::module&);
+void export_TriangulatedGeometry(pybind11::module&);
+void export_TriangulatedGeometryAccessDevice(pybind11::module&);
+void export_TriangulatedGeometryAccessHost(pybind11::module&);
 void export_VirtualParticleFiller(pybind11::module&);
 #ifdef ENABLE_HIP
 void export_ATCollisionMethodGPU(pybind11::module&);
@@ -72,11 +75,21 @@ void export_BulkStreamingMethodBlockForce(pybind11::module&);
 void export_BulkStreamingMethodConstantForce(pybind11::module&);
 void export_BulkStreamingMethodNoForce(pybind11::module&);
 void export_BulkStreamingMethodSineForce(pybind11::module&);
+
+void export_TriangulatedGeometryStreamingMethodBlockForce(pybind11::module&);
+void export_TriangulatedGeometryStreamingMethodConstantForce(pybind11::module&);
+void export_TriangulatedGeometryStreamingMethodNoForce(pybind11::module&);
+void export_TriangulatedGeometryStreamingMethodSineForce(pybind11::module&);
 #ifdef ENABLE_HIP
 void export_BulkStreamingMethodBlockForceGPU(pybind11::module&);
 void export_BulkStreamingMethodConstantForceGPU(pybind11::module&);
 void export_BulkStreamingMethodNoForceGPU(pybind11::module&);
 void export_BulkStreamingMethodSineForceGPU(pybind11::module&);
+
+void export_TriangulatedGeometryStreamingMethodBlockForceGPU(pybind11::module&);
+void export_TriangulatedGeometryStreamingMethodConstantForceGPU(pybind11::module&);
+void export_TriangulatedGeometryStreamingMethodNoForceGPU(pybind11::module&);
+void export_TriangulatedGeometryStreamingMethodSineForceGPU(pybind11::module&);
 #endif // ENABLE_HIP
 
 // concentric cylinders
@@ -226,6 +239,8 @@ PYBIND11_MODULE(_mpcd, m)
     export_SphereGeometryFiller(m);
     export_SineForce(m);
     export_SRDCollisionMethod(m);
+    export_TriangulatedGeometry(m);
+    export_TriangulatedGeometryAccessHost(m);
 #ifdef ENABLE_HIP
     export_ATCollisionMethodGPU(m);
     export_CellListGPU(m);
@@ -242,17 +257,26 @@ PYBIND11_MODULE(_mpcd, m)
     export_SorterGPU(m);
     export_SphereGeometryFillerGPU(m);
     export_SRDCollisionMethodGPU(m);
+    export_TriangulatedGeometryAccessDevice(m);
 #endif // ENABLE_HIP
 
     export_BulkStreamingMethodBlockForce(m);
     export_BulkStreamingMethodConstantForce(m);
     export_BulkStreamingMethodNoForce(m);
     export_BulkStreamingMethodSineForce(m);
+    export_TriangulatedGeometryStreamingMethodBlockForce(m);
+    export_TriangulatedGeometryStreamingMethodConstantForce(m);
+    export_TriangulatedGeometryStreamingMethodNoForce(m);
+    export_TriangulatedGeometryStreamingMethodSineForce(m);
 #ifdef ENABLE_HIP
     export_BulkStreamingMethodBlockForceGPU(m);
     export_BulkStreamingMethodConstantForceGPU(m);
     export_BulkStreamingMethodNoForceGPU(m);
     export_BulkStreamingMethodSineForceGPU(m);
+    export_TriangulatedGeometryStreamingMethodBlockForceGPU(m);
+    export_TriangulatedGeometryStreamingMethodConstantForceGPU(m);
+    export_TriangulatedGeometryStreamingMethodNoForceGPU(m);
+    export_TriangulatedGeometryStreamingMethodSineForceGPU(m);
 #endif // ENABLE_HIP
 
     // concentric cylinders

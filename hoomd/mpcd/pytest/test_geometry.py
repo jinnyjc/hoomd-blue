@@ -1,6 +1,7 @@
 # Copyright (c) 2009-2026 The Regents of the University of Michigan.
 # Part of HOOMD-blue, released under the BSD 3-Clause License.
 
+import numpy as np
 import pytest
 
 import hoomd
@@ -256,3 +257,80 @@ class TestSphere:
         sim = simulation_factory(snap)
         geom._attach(sim)
         pickling_check(geom)
+
+
+class TestTriangulatedGeometry:
+    def test_triangulated_geometry(self, simulation_factory, snap):
+        """Test that TriangulatedGeometry correctly stores data."""
+        sim = simulation_factory(snap)
+
+        vertices = np.array(
+            [
+                [-5, 5, -5],
+                [-5, 5, 5],
+                [5, 5, -5],
+                [5, 5, 5],
+                [-5, -5, 5],
+                [-5, -5, -5],
+                [5, -5, 5],
+                [5, -5, -5],
+            ]
+        )
+        triangles = np.array([[0, 1, 3], [0, 3, 2], [4, 7, 5], [4, 6, 7]], dtype=int)
+
+        geom = hoomd.mpcd.geometry.TriangulatedGeometry(
+            sim, vertices, triangles, unwrap_distance=0, no_slip=True
+        )
+
+        assert geom.num_vertices == vertices.shape[0]
+        assert geom.num_triangles == triangles.shape[0]
+        assert geom.no_slip
+        assert geom.unwrap_distance == 0
+
+        with geom.cpu_view as data:
+            assert data.vertices.shape[0] == vertices.shape[0]
+            assert data.triangles.shape[0] == triangles.shape[0]
+
+            np.testing.assert_array_almost_equal(data.vertices, vertices)
+            np.testing.assert_array_almost_equal(data.triangles, triangles)
+
+        with geom.cpu_unwrapped_view as data:
+            assert data.vertices.shape[0] == vertices.shape[0]
+            assert data.triangles.shape[0] == triangles.shape[0]
+
+            np.testing.assert_array_almost_equal(data.vertices, vertices)
+            np.testing.assert_array_almost_equal(data.triangles, triangles)
+
+    def test_unwrapped_triangulated_geometry(self, simulation_factory, snap):
+        """Test that TriangulatedGeometry correctly stores unwrapped data."""
+        sim = simulation_factory(snap)
+
+        vertices = np.array(
+            [
+                [-5, 5, -5],
+                [-5, 5, 5],
+                [5, 5, -5],
+                [5, 5, 5],
+            ]
+        )
+        triangles = np.array([[0, 1, 3], [0, 3, 2]], dtype=int)
+
+        geom = hoomd.mpcd.geometry.TriangulatedGeometry(
+            sim, vertices, triangles, unwrap_distance=1.0, no_slip=True
+        )
+
+        assert geom.num_vertices == vertices.shape[0]
+        assert geom.num_triangles == triangles.shape[0]
+        assert geom.no_slip
+        assert geom.unwrap_distance == 1.0
+
+        with geom.cpu_view as data:
+            assert data.vertices.shape[0] == vertices.shape[0]
+            assert data.triangles.shape[0] == triangles.shape[0]
+
+            np.testing.assert_array_almost_equal(data.vertices, vertices)
+            np.testing.assert_array_almost_equal(data.triangles, triangles)
+
+        with geom.cpu_unwrapped_view as data:
+            assert data.vertices.shape == (68, 3)
+            assert data.triangles.shape == (32, 3)

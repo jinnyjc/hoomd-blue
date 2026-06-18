@@ -19,6 +19,7 @@ set(_mpcd_cc_sources
     Sorter.cc
     SRDCollisionMethod.cc
     StreamingMethod.cc
+    TriangulatedGeometry.cc
     VirtualParticleFiller.cc
     )
 
@@ -47,6 +48,8 @@ set(_mpcd_headers
     Sorter.h
     SRDCollisionMethod.h
     StreamingMethod.h
+    TriangulatedGeometry.h
+    TriangulatedGeometryStreamingMethod.h
     VirtualParticleFiller.h
     )
 
@@ -109,6 +112,8 @@ if(ENABLE_HIP)
         SorterGPU.h
         SRDCollisionMethodGPU.cuh
         SRDCollisionMethodGPU.h
+        TriangulatedGeometryStreamingMethodGPU.cuh
+        TriangulatedGeometryStreamingMethodGPU.h
         )
     set(_mpcd_cu_sources
         ATCollisionMethodGPU.cu
@@ -124,6 +129,7 @@ if(ENABLE_HIP)
         ReverseNonequilibriumShearFlowGPU.cu
         SorterGPU.cu
         SRDCollisionMethodGPU.cu
+        TriangulatedGeometryStreamingMethodGPU.cu
         )
 endif()
 
@@ -138,6 +144,31 @@ endforeach()
 foreach(_force ${_forces})
     list(APPEND _mpcd_cc_sources ${_force}.cc)
     list(APPEND _mpcd_headers ${_force}.h)
+endforeach()
+
+# generate cc templates for triangulated geoemtry streaming method
+foreach(_force ${_forces})
+    # bulk geometry is special
+    configure_file(
+        TriangulatedGeometryStreamingMethod.cc.inc
+        TriangulatedGeometryStreamingMethod${_force}.cc
+        @ONLY
+        )
+    list(APPEND _mpcd_cc_sources TriangulatedGeometryStreamingMethod${_force}.cc)
+    if(ENABLE_HIP)
+        configure_file(
+            TriangulatedGeometryStreamingMethodGPU.cc.inc
+            TriangulatedGeometryStreamingMethod${_force}GPU.cc
+            @ONLY
+        )
+        configure_file(
+            TriangulatedGeometryStreamingMethodGPUKernel.cu.inc
+            TriangulatedGeometryStreamingMethod${_force}GPUKernel.cu
+            @ONLY
+        )
+        list(APPEND _mpcd_cc_sources TriangulatedGeometryStreamingMethod${_force}GPU.cc)
+        list(APPEND _mpcd_cu_sources TriangulatedGeometryStreamingMethod${_force}GPUKernel.cu)
+    endif()
 endforeach()
 
 # generate cc and cu templates for forces and streaming geometries
@@ -258,6 +289,9 @@ endif()
 
 # link the library to its dependencies
 target_link_libraries(_mpcd PUBLIC _hoomd _md)
+if (ENABLE_HIP)
+    target_link_libraries(_mpcd PRIVATE neighbor)
+endif()
 
 # install the library
 install(TARGETS _mpcd EXPORT HOOMDTargets LIBRARY DESTINATION ${PYTHON_SITE_INSTALL_DIR}/mpcd)

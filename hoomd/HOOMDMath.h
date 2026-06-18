@@ -814,6 +814,12 @@ HOSTDEVICE inline hoomd::Scalar dot(const hoomd::Scalar3& a, const hoomd::Scalar
     return a.x * b.x + a.y * b.y + a.z * b.z;
     }
 
+//! Vector cross product
+HOSTDEVICE inline hoomd::Scalar3 cross(const hoomd::Scalar3& a, const hoomd::Scalar3& b)
+    {
+    return hoomd::make_scalar3(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x);
+    }
+
 // ----------- Integer vector math functions ----------------------
 //! Integer vector addition
 HOSTDEVICE inline int3 operator+(const int3& a, const int3& b)

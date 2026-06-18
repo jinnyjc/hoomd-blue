@@ -3,7 +3,7 @@ stream
 
 .. automodule:: hoomd.mpcd.stream
    :members:
-   :exclude-members: BounceBack,Bulk,StreamingMethod
+   :exclude-members: BounceBack,Bulk,StreamingMethod,TriangulatedBounceBack
 
 .. rubric:: Classes
 
@@ -13,3 +13,4 @@ stream
     stream/bounceback
     stream/bulk
     stream/streamingmethod
+    stream/triangulatedbounceback
