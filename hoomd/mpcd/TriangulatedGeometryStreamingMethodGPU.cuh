@@ -1,4 +1,4 @@
-// Copyright (c) 2009-2025 The Regents of the University of Michigan.
+// Copyright (c) 2009-2026 The Regents of the University of Michigan.
 // Part of HOOMD-blue, released under the BSD 3-Clause License.
 
 #ifndef MPCD_TRIANGULATED_GEOMETRY_STREAMING_METHOD_GPU_CUH_
@@ -68,13 +68,13 @@ class TriangleLBVHWrapper
     ~TriangleLBVHWrapper();
 
     //! Setup the LBVH
-    void setup(const Scalar3* vertices,
+    void setup(const ShortReal3* vertices,
                const uint3* triangles,
                unsigned int n_triangles,
                hipStream_t stream);
 
     //! Build the LBVH
-    void build(const Scalar3* vertices,
+    void build(const ShortReal3* vertices,
                const uint3* triangles,
                unsigned int n_triangles,
                const Scalar3& lo,
@@ -118,7 +118,7 @@ class TriangleLBVHTraverserWrapper
 
     //! Traverse the LBVH
     void traverse(const triangulated_stream_args_t& args,
-                  const Scalar3* d_vertices,
+                  const ShortReal3* d_vertices,
                   const uint3* d_triangles,
                   Scalar* d_dt_remain,
                   const unsigned int* d_active_idx,

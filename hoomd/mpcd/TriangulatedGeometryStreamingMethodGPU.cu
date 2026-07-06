@@ -1,4 +1,4 @@
-// Copyright (c) 2009-2025 The Regents of the University of Michigan.
+// Copyright (c) 2009-2026 The Regents of the University of Michigan.
 // Part of HOOMD-blue, released under the BSD 3-Clause License.
 
 /*!
@@ -39,7 +39,7 @@ struct TriangleInsertOp
      * \param triangles_ List of triangles.
      * \param N_ Number of primitives (triangles) to insert.
      */
-    TriangleInsertOp(const Scalar3* vertices_, const uint3* triangles_, unsigned int N_)
+    TriangleInsertOp(const ShortReal3* vertices_, const uint3* triangles_, unsigned int N_)
         : vertices(vertices_), triangles(triangles_), N(N_)
         {
         }
@@ -52,9 +52,9 @@ struct TriangleInsertOp
     DEVICE neighbor::BoundingBox get(unsigned int idx) const
         {
         const uint3 tri = triangles[idx];
-        const Scalar3 a = vertices[tri.x];
-        const Scalar3 b = vertices[tri.y];
-        const Scalar3 c = vertices[tri.z];
+        const ShortReal3 a = vertices[tri.x];
+        const ShortReal3 b = vertices[tri.y];
+        const ShortReal3 c = vertices[tri.z];
 
         const float3 lo = make_float3(min(a.x, min(b.x, c.x)),
                                       min(a.y, min(b.y, c.y)),
@@ -72,9 +72,9 @@ struct TriangleInsertOp
         return N;
         }
 
-    const Scalar3* vertices; //!< Triangle vertices
-    const uint3* triangles;  //!< Triangle vertex indices
-    const unsigned int N;    //!< Number of primitives
+    const ShortReal3* vertices; //!< Triangle vertices
+    const uint3* triangles;     //!< Triangle vertex indices
+    const unsigned int N;       //!< Number of primitives
     };
 
 //! Path query operation for active particles
@@ -227,7 +227,7 @@ struct CollisionOutputOp
      * \param no_slip Boundary condition at the wall
      * \param eps_ Numerical tolerance
      */
-    CollisionOutputOp(const Scalar3* vertices_,
+    CollisionOutputOp(const ShortReal3* vertices_,
                       const uint3* triangles_,
                       Scalar4* d_pos_,
                       Scalar4* d_vel_,
@@ -306,12 +306,16 @@ struct CollisionOutputOp
     DEVICE void process(ThreadData& t, const int primitive) const
         {
         const uint3 tri = triangles[primitive];
-        const Scalar3 a = vertices[tri.x];
-        const Scalar3 b = vertices[tri.y];
-        const Scalar3 c = vertices[tri.z];
+        const ShortReal3 a = vertices[tri.x];
+        const ShortReal3 b = vertices[tri.y];
+        const ShortReal3 c = vertices[tri.z];
 
-        const Scalar3 e1 = b - a;
-        const Scalar3 e2 = c - a;
+        const Scalar3 aa = make_scalar3(a.x, a.y, a.z);
+        const Scalar3 bb = make_scalar3(b.x, b.y, b.z);
+        const Scalar3 cc = make_scalar3(c.x, c.y, c.z);
+
+        const Scalar3 e1 = bb - aa;
+        const Scalar3 e2 = cc - aa;
         const Scalar3 n = cross(e1, e2);
 
         // exclude particles moving away from the triangle
@@ -349,63 +353,65 @@ struct CollisionOutputOp
             }
 
         // calculate shear constants
-        const Scalar Sx = vel_comp[kx] / det;
-        const Scalar Sy = vel_comp[ky] / det;
-        const Scalar Sz = Scalar(1.0) / det;
+        const ShortReal Sx = static_cast<ShortReal>(vel_comp[kx] / det);
+        const ShortReal Sy = static_cast<ShortReal>(vel_comp[ky] / det);
+        const ShortReal Sz = static_cast<ShortReal>(Scalar(1.0) / det);
 
         // calculate vertices relative to ray origin
-        const Scalar3 A = a - t.pos;
-        const Scalar3 B = b - t.pos;
-        const Scalar3 C = c - t.pos;
-
-        const Scalar A_comp[3] = {A.x, A.y, A.z};
-        const Scalar B_comp[3] = {B.x, B.y, B.z};
-        const Scalar C_comp[3] = {C.x, C.y, C.z};
+        const ShortReal A_comp[3] = {static_cast<ShortReal>(Scalar(a.x) - t.pos.x),
+                                     static_cast<ShortReal>(Scalar(a.y) - t.pos.y),
+                                     static_cast<ShortReal>(Scalar(a.z) - t.pos.z)};
+        const ShortReal B_comp[3] = {static_cast<ShortReal>(Scalar(b.x) - t.pos.x),
+                                     static_cast<ShortReal>(Scalar(b.y) - t.pos.y),
+                                     static_cast<ShortReal>(Scalar(b.z) - t.pos.z)};
+        const ShortReal C_comp[3] = {static_cast<ShortReal>(Scalar(c.x) - t.pos.x),
+                                     static_cast<ShortReal>(Scalar(c.y) - t.pos.y),
+                                     static_cast<ShortReal>(Scalar(c.z) - t.pos.z)};
 
         // apply shear and scale
-        const Scalar Ax = A_comp[kx] - Sx * A_comp[kz];
-        const Scalar Ay = A_comp[ky] - Sy * A_comp[kz];
-        const Scalar Bx = B_comp[kx] - Sx * B_comp[kz];
-        const Scalar By = B_comp[ky] - Sy * B_comp[kz];
-        const Scalar Cx = C_comp[kx] - Sx * C_comp[kz];
-        const Scalar Cy = C_comp[ky] - Sy * C_comp[kz];
+        const ShortReal Ax = A_comp[kx] - Sx * A_comp[kz];
+        const ShortReal Ay = A_comp[ky] - Sy * A_comp[kz];
+        const ShortReal Bx = B_comp[kx] - Sx * B_comp[kz];
+        const ShortReal By = B_comp[ky] - Sy * B_comp[kz];
+        const ShortReal Cx = C_comp[kx] - Sx * C_comp[kz];
+        const ShortReal Cy = C_comp[ky] - Sy * C_comp[kz];
 
         // calculate scaled barycentric coordinates
-        Scalar u = Cx * By - Cy * Bx;
-        Scalar v = Ax * Cy - Ay * Cx;
-        Scalar w = Bx * Ay - By * Ax;
+        ShortReal u = Cx * By - Cy * Bx;
+        ShortReal v = Ax * Cy - Ay * Cx;
+        ShortReal w = Bx * Ay - By * Ax;
 
-        if (u == Scalar(0.0) || v == Scalar(0.0) || w == Scalar(0.0))
+        if (u == ShortReal(0.0) || v == ShortReal(0.0) || w == ShortReal(0.0))
             {
             const double CxBy = (double)Cx * (double)By;
             const double CyBx = (double)Cy * (double)Bx;
-            u = static_cast<Scalar>(CxBy - CyBx);
+            u = static_cast<ShortReal>(CxBy - CyBx);
 
             const double AxCy = (double)Ax * (double)Cy;
             const double AyCx = (double)Ay * (double)Cx;
-            v = static_cast<Scalar>(AxCy - AyCx);
+            v = static_cast<ShortReal>(AxCy - AyCx);
 
             const double BxAy = (double)Bx * (double)Ay;
             const double ByAx = (double)By * (double)Ax;
-            w = static_cast<Scalar>(BxAy - ByAx);
+            w = static_cast<ShortReal>(BxAy - ByAx);
             }
 
-        if ((u < Scalar(0.0) || v < Scalar(0.0) || w < Scalar(0.0))
-            && (u > Scalar(0.0) || v > Scalar(0.0) || w > Scalar(0.0)))
+        if ((u < ShortReal(0.0) || v < ShortReal(0.0) || w < ShortReal(0.0))
+            && (u > ShortReal(0.0) || v > ShortReal(0.0) || w > ShortReal(0.0)))
             return;
 
-        const Scalar inv_det = Scalar(1.0) / (u + v + w);
+        const ShortReal inv_det = Scalar(1.0) / (u + v + w);
         if (!isfinite((double)inv_det))
             return;
 
         // scaled z
-        const Scalar Az = Sz * A_comp[kz];
-        const Scalar Bz = Sz * B_comp[kz];
-        const Scalar Cz = Sz * C_comp[kz];
+        const ShortReal Az = Sz * A_comp[kz];
+        const ShortReal Bz = Sz * B_comp[kz];
+        const ShortReal Cz = Sz * C_comp[kz];
 
-        const Scalar t_hit = (u * Az + v * Bz + w * Cz) * inv_det;
+        const ShortReal t_hit = (u * Az + v * Bz + w * Cz) * inv_det;
 
-        if (t_hit <= Scalar(0.0) || t_hit > t.dt_remain)
+        if (t_hit <= ShortReal(0.0) || t_hit > t.dt_remain)
             return;
 
         if (t_hit < t.best_t)
@@ -431,13 +437,17 @@ struct CollisionOutputOp
             {
             // retrieve the triangle that produces earliest hit
             const uint3 tri = triangles[t.best_tri];
-            const Scalar3 a = vertices[tri.x];
-            const Scalar3 b = vertices[tri.y];
-            const Scalar3 c = vertices[tri.z];
+            const ShortReal3 a = vertices[tri.x];
+            const ShortReal3 b = vertices[tri.y];
+            const ShortReal3 c = vertices[tri.z];
+
+            const Scalar3 aa = make_scalar3(a.x, a.y, a.z);
+            const Scalar3 bb = make_scalar3(b.x, b.y, b.z);
+            const Scalar3 cc = make_scalar3(c.x, c.y, c.z);
 
             // compute triangle normal
-            const Scalar3 e1 = b - a;
-            const Scalar3 e2 = c - a;
+            const Scalar3 e1 = bb - aa;
+            const Scalar3 e2 = cc - aa;
             const Scalar3 n = cross(e1, e2);
             const Scalar3 n_unit = n * (Scalar(1) / fast::sqrt(dot(n, n)));
 
@@ -464,14 +474,14 @@ struct CollisionOutputOp
         d_flags[t.i] = (t.dt_remain > Scalar(0)) ? 1u : 0u;
         }
 
-    const Scalar3* vertices; //!< Triangle vertices
-    const uint3* triangles;  //!< Triangle vertex indices
-    Scalar4* d_pos;          //!< Particle positions
-    Scalar4* d_vel;          //!< Particle velocities
-    Scalar* d_dt_remain;     //!< Remaining timestep
-    unsigned int* d_flags;   //!< Flag set to 1 if the particle's dt_remain > 0
-    bool no_slip;            //!< Boundary condition at the wall
-    Scalar eps;              //!< Numerical tolerance
+    const ShortReal3* vertices; //!< Triangle vertices
+    const uint3* triangles;     //!< Triangle vertex indices
+    Scalar4* d_pos;             //!< Particle positions
+    Scalar4* d_vel;             //!< Particle velocities
+    Scalar* d_dt_remain;        //!< Remaining timestep
+    unsigned int* d_flags;      //!< Flag set to 1 if the particle's dt_remain > 0
+    bool no_slip;               //!< Boundary condition at the wall
+    Scalar eps;                 //!< Numerical tolerance
     };
 
 //! Driver function implementations
@@ -534,7 +544,7 @@ TriangleLBVHWrapper::~TriangleLBVHWrapper()
  * \param num_triangles Number of triangles
  * \param stream CUDA stream for execution
  */
-void TriangleLBVHWrapper::setup(const Scalar3* vertices,
+void TriangleLBVHWrapper::setup(const ShortReal3* vertices,
                                 const uint3* triangles,
                                 unsigned int num_triangles,
                                 hipStream_t stream)
@@ -556,7 +566,7 @@ void TriangleLBVHWrapper::setup(const Scalar3* vertices,
  * box are internally converted to floats using round-down and round-up modes,
  * respectively, which conserves the original box.
  */
-void TriangleLBVHWrapper::build(const Scalar3* vertices,
+void TriangleLBVHWrapper::build(const ShortReal3* vertices,
                                 const uint3* triangles,
                                 unsigned int num_triangles,
                                 const Scalar3& lo,
@@ -628,7 +638,7 @@ void TriangleLBVHTraverserWrapper::setup(neighbor::LBVH& lbvh, hipStream_t strea
  * given the unwrap distance. A NullTransformOp is used as no primitive mapping is needed.
  */
 void TriangleLBVHTraverserWrapper::traverse(const triangulated_stream_args_t& args,
-                                            const Scalar3* d_vertices,
+                                            const ShortReal3* d_vertices,
                                             const uint3* d_triangles,
                                             Scalar* d_dt_remain,
                                             const unsigned int* d_active_idx,
