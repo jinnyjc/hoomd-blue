@@ -158,10 +158,10 @@ struct PathQueryOp
     DEVICE Volume get(const ThreadData& q, const float3&) const
         {
         const Scalar3 end = q.pos + q.dt_remain * q.vel;
-        const float3 lo
-            = make_float3(min(q.pos.x, end.x), min(q.pos.y, end.y), min(q.pos.z, end.z));
-        const float3 hi
-            = make_float3(max(q.pos.x, end.x), max(q.pos.y, end.y), max(q.pos.z, end.z));
+        const Scalar3 lo
+            = make_scalar3(min(q.pos.x, end.x), min(q.pos.y, end.y), min(q.pos.z, end.z));
+        const Scalar3 hi
+            = make_scalar3(max(q.pos.x, end.x), max(q.pos.y, end.y), max(q.pos.z, end.z));
         return neighbor::BoundingBox(lo, hi);
         }
 
@@ -353,65 +353,63 @@ struct CollisionOutputOp
             }
 
         // calculate shear constants
-        const ShortReal Sx = static_cast<ShortReal>(vel_comp[kx] / det);
-        const ShortReal Sy = static_cast<ShortReal>(vel_comp[ky] / det);
-        const ShortReal Sz = static_cast<ShortReal>(Scalar(1.0) / det);
+        const Scalar Sx = vel_comp[kx] / det;
+        const Scalar Sy = vel_comp[ky] / det;
+        const Scalar Sz = Scalar(1.0) / det;
 
         // calculate vertices relative to ray origin
-        const ShortReal A_comp[3] = {static_cast<ShortReal>(Scalar(a.x) - t.pos.x),
-                                     static_cast<ShortReal>(Scalar(a.y) - t.pos.y),
-                                     static_cast<ShortReal>(Scalar(a.z) - t.pos.z)};
-        const ShortReal B_comp[3] = {static_cast<ShortReal>(Scalar(b.x) - t.pos.x),
-                                     static_cast<ShortReal>(Scalar(b.y) - t.pos.y),
-                                     static_cast<ShortReal>(Scalar(b.z) - t.pos.z)};
-        const ShortReal C_comp[3] = {static_cast<ShortReal>(Scalar(c.x) - t.pos.x),
-                                     static_cast<ShortReal>(Scalar(c.y) - t.pos.y),
-                                     static_cast<ShortReal>(Scalar(c.z) - t.pos.z)};
+        const Scalar3 A = aa - t.pos;
+        const Scalar3 B = bb - t.pos;
+        const Scalar3 C = cc - t.pos;
+
+        const Scalar A_comp[3] = {A.x, A.y, A.z};
+        const Scalar B_comp[3] = {B.x, B.y, B.z};
+        const Scalar C_comp[3] = {C.x, C.y, C.z};
 
         // apply shear and scale
-        const ShortReal Ax = A_comp[kx] - Sx * A_comp[kz];
-        const ShortReal Ay = A_comp[ky] - Sy * A_comp[kz];
-        const ShortReal Bx = B_comp[kx] - Sx * B_comp[kz];
-        const ShortReal By = B_comp[ky] - Sy * B_comp[kz];
-        const ShortReal Cx = C_comp[kx] - Sx * C_comp[kz];
-        const ShortReal Cy = C_comp[ky] - Sy * C_comp[kz];
+        const Scalar Ax = A_comp[kx] - Sx * A_comp[kz];
+        const Scalar Ay = A_comp[ky] - Sy * A_comp[kz];
+        const Scalar Bx = B_comp[kx] - Sx * B_comp[kz];
+        const Scalar By = B_comp[ky] - Sy * B_comp[kz];
+        const Scalar Cx = C_comp[kx] - Sx * C_comp[kz];
+        const Scalar Cy = C_comp[ky] - Sy * C_comp[kz];
 
         // calculate scaled barycentric coordinates
-        ShortReal u = Cx * By - Cy * Bx;
-        ShortReal v = Ax * Cy - Ay * Cx;
-        ShortReal w = Bx * Ay - By * Ax;
+        Scalar u = Cx * By - Cy * Bx;
+        Scalar v = Ax * Cy - Ay * Cx;
+        Scalar w = Bx * Ay - By * Ax;
 
-        if (u == ShortReal(0.0) || v == ShortReal(0.0) || w == ShortReal(0.0))
+        if (u == Scalar(0.0) || v == Scalar(0.0) || w == Scalar(0.0))
             {
             const double CxBy = (double)Cx * (double)By;
             const double CyBx = (double)Cy * (double)Bx;
-            u = static_cast<ShortReal>(CxBy - CyBx);
+            u = static_cast<Scalar>(CxBy - CyBx);
 
             const double AxCy = (double)Ax * (double)Cy;
             const double AyCx = (double)Ay * (double)Cx;
-            v = static_cast<ShortReal>(AxCy - AyCx);
+            v = static_cast<Scalar>(AxCy - AyCx);
 
             const double BxAy = (double)Bx * (double)Ay;
             const double ByAx = (double)By * (double)Ax;
-            w = static_cast<ShortReal>(BxAy - ByAx);
+            w = static_cast<Scalar>(BxAy - ByAx);
             }
 
-        if ((u < ShortReal(0.0) || v < ShortReal(0.0) || w < ShortReal(0.0))
-            && (u > ShortReal(0.0) || v > ShortReal(0.0) || w > ShortReal(0.0)))
+        if ((u < Scalar(0.0) || v < Scalar(0.0) || w < Scalar(0.0))
+            && (u > Scalar(0.0) || v > Scalar(0.0) || w > Scalar(0.0)))
             return;
 
-        const ShortReal inv_det = Scalar(1.0) / (u + v + w);
+        const Scalar inv_det = Scalar(1.0) / (u + v + w);
         if (!isfinite((double)inv_det))
             return;
 
         // scaled z
-        const ShortReal Az = Sz * A_comp[kz];
-        const ShortReal Bz = Sz * B_comp[kz];
-        const ShortReal Cz = Sz * C_comp[kz];
+        const Scalar Az = Sz * A_comp[kz];
+        const Scalar Bz = Sz * B_comp[kz];
+        const Scalar Cz = Sz * C_comp[kz];
 
-        const ShortReal t_hit = (u * Az + v * Bz + w * Cz) * inv_det;
+        const Scalar t_hit = (u * Az + v * Bz + w * Cz) * inv_det;
 
-        if (t_hit <= ShortReal(0.0) || t_hit > t.dt_remain)
+        if (t_hit <= Scalar(0.0) || t_hit > t.dt_remain)
             return;
 
         if (t_hit < t.best_t)

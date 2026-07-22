@@ -42,9 +42,9 @@ namespace mpcd
  */
 inline bool intersectTriangle(const Scalar3& pos_v,
                               const Scalar3& vel_v,
-                              const ShortReal3& a,
-                              const ShortReal3& b,
-                              const ShortReal3& c,
+                              const Scalar3& a,
+                              const Scalar3& b,
+                              const Scalar3& c,
                               const Scalar dt_remain,
                               const Scalar eps,
                               Scalar& t_hit)
@@ -76,65 +76,63 @@ inline bool intersectTriangle(const Scalar3& pos_v,
         std::swap(kx, ky);
 
     // calculate shear constants
-    const ShortReal Sx = static_cast<ShortReal>(vel_comp[kx] / det);
-    const ShortReal Sy = static_cast<ShortReal>(vel_comp[ky] / det);
-    const ShortReal Sz = static_cast<ShortReal>(Scalar(1.0) / det);
+    const Scalar Sx = vel_comp[kx] / det;
+    const Scalar Sy = vel_comp[ky] / det;
+    const Scalar Sz = Scalar(1.0) / det;
 
     // calculate vertices relative to ray origin
-    const ShortReal A_comp[3] = {static_cast<ShortReal>(Scalar(a.x) - pos_v.x),
-                                 static_cast<ShortReal>(Scalar(a.y) - pos_v.y),
-                                 static_cast<ShortReal>(Scalar(a.z) - pos_v.z)};
-    const ShortReal B_comp[3] = {static_cast<ShortReal>(Scalar(b.x) - pos_v.x),
-                                 static_cast<ShortReal>(Scalar(b.y) - pos_v.y),
-                                 static_cast<ShortReal>(Scalar(b.z) - pos_v.z)};
-    const ShortReal C_comp[3] = {static_cast<ShortReal>(Scalar(c.x) - pos_v.x),
-                                 static_cast<ShortReal>(Scalar(c.y) - pos_v.y),
-                                 static_cast<ShortReal>(Scalar(c.z) - pos_v.z)};
+    const Scalar3 A = a - pos_v;
+    const Scalar3 B = b - pos_v;
+    const Scalar3 C = c - pos_v;
+
+    const Scalar A_comp[3] = {A.x, A.y, A.z};
+    const Scalar B_comp[3] = {B.x, B.y, B.z};
+    const Scalar C_comp[3] = {C.x, C.y, C.z};
 
     // apply shear and scale
-    const ShortReal Ax = A_comp[kx] - Sx * A_comp[kz];
-    const ShortReal Ay = A_comp[ky] - Sy * A_comp[kz];
-    const ShortReal Bx = B_comp[kx] - Sx * B_comp[kz];
-    const ShortReal By = B_comp[ky] - Sy * B_comp[kz];
-    const ShortReal Cx = C_comp[kx] - Sx * C_comp[kz];
-    const ShortReal Cy = C_comp[ky] - Sy * C_comp[kz];
+    const Scalar Ax = A_comp[kx] - Sx * A_comp[kz];
+    const Scalar Ay = A_comp[ky] - Sy * A_comp[kz];
+    const Scalar Bx = B_comp[kx] - Sx * B_comp[kz];
+    const Scalar By = B_comp[ky] - Sy * B_comp[kz];
+    const Scalar Cx = C_comp[kx] - Sx * C_comp[kz];
+    const Scalar Cy = C_comp[ky] - Sy * C_comp[kz];
 
     // calculate scaled barycentric coordinates
-    ShortReal u = Cx * By - Cy * Bx;
-    ShortReal v = Ax * Cy - Ay * Cx;
-    ShortReal w = Bx * Ay - By * Ax;
+    Scalar u = Cx * By - Cy * Bx;
+    Scalar v = Ax * Cy - Ay * Cx;
+    Scalar w = Bx * Ay - By * Ax;
 
-    if (u == ShortReal(0.0) || v == ShortReal(0.0) || w == ShortReal(0.0))
+    if (u == Scalar(0.0) || v == Scalar(0.0) || w == Scalar(0.0))
         {
         const double CxBy = (double)Cx * (double)By;
         const double CyBx = (double)Cy * (double)Bx;
-        u = static_cast<ShortReal>(CxBy - CyBx);
+        u = static_cast<Scalar>(CxBy - CyBx);
 
         const double AxCy = (double)Ax * (double)Cy;
         const double AyCx = (double)Ay * (double)Cx;
-        v = static_cast<ShortReal>(AxCy - AyCx);
+        v = static_cast<Scalar>(AxCy - AyCx);
 
         const double BxAy = (double)Bx * (double)Ay;
         const double ByAx = (double)By * (double)Ax;
-        w = static_cast<ShortReal>(BxAy - ByAx);
+        w = static_cast<Scalar>(BxAy - ByAx);
         }
 
-    if ((u < ShortReal(0.0) || v < ShortReal(0.0) || w < ShortReal(0.0))
-        && (u > ShortReal(0.0) || v > ShortReal(0.0) || w > ShortReal(0.0)))
+    if ((u < Scalar(0.0) || v < Scalar(0.0) || w < Scalar(0.0))
+        && (u > Scalar(0.0) || v > Scalar(0.0) || w > Scalar(0.0)))
         return false;
 
-    const ShortReal inv_det = ShortReal(1.0) / (u + v + w);
+    const Scalar inv_det = Scalar(1.0) / (u + v + w);
     if (!std::isfinite((double)inv_det))
         return false;
 
     // scaled z
-    const ShortReal Az = Sz * A_comp[kz];
-    const ShortReal Bz = Sz * B_comp[kz];
-    const ShortReal Cz = Sz * C_comp[kz];
+    const Scalar Az = Sz * A_comp[kz];
+    const Scalar Bz = Sz * B_comp[kz];
+    const Scalar Cz = Sz * C_comp[kz];
 
-    const ShortReal t = (u * Az + v * Bz + w * Cz) * inv_det;
+    const Scalar t = (u * Az + v * Bz + w * Cz) * inv_det;
 
-    if (t <= ShortReal(0.0) || t > dt_remain)
+    if (t <= Scalar(0.0) || t > dt_remain)
         return false;
 
     t_hit = t;
@@ -323,9 +321,9 @@ template<class Force> void TriangulatedGeometryStreamingMethod<Force>::stream(ui
                 {
                 const uint3 triangles = h_triangles.data[cur_tri];
 
-                const ShortReal3 a(h_vertices.data[triangles.x]);
-                const ShortReal3 b(h_vertices.data[triangles.y]);
-                const ShortReal3 c(h_vertices.data[triangles.z]);
+                const ShortReal3 a = h_vertices.data[triangles.x];
+                const ShortReal3 b = h_vertices.data[triangles.y];
+                const ShortReal3 c = h_vertices.data[triangles.z];
 
                 const Scalar3 aa = make_scalar3(a.x, a.y, a.z);
                 const Scalar3 bb = make_scalar3(b.x, b.y, b.z);
@@ -342,7 +340,7 @@ template<class Force> void TriangulatedGeometryStreamingMethod<Force>::stream(ui
 
                 // narrow search: exact ray-triangle intersection
                 Scalar t_hit;
-                if (!intersectTriangle(pos_v, vel_v, a, b, c, dt_remain, eps, t_hit))
+                if (!intersectTriangle(pos_v, vel_v, aa, bb, cc, dt_remain, eps, t_hit))
                     continue;
 
                 if (t_hit >= best_t)
@@ -358,9 +356,9 @@ template<class Force> void TriangulatedGeometryStreamingMethod<Force>::stream(ui
                 // retrieve the triangle that produces earliest hit
                 const uint3 triangle = h_triangles.data[best_tri];
 
-                const ShortReal3 a(h_vertices.data[triangle.x]);
-                const ShortReal3 b(h_vertices.data[triangle.y]);
-                const ShortReal3 c(h_vertices.data[triangle.z]);
+                const ShortReal3 a = h_vertices.data[triangle.x];
+                const ShortReal3 b = h_vertices.data[triangle.y];
+                const ShortReal3 c = h_vertices.data[triangle.z];
 
                 const Scalar3 aa = make_scalar3(a.x, a.y, a.z);
                 const Scalar3 bb = make_scalar3(b.x, b.y, b.z);
