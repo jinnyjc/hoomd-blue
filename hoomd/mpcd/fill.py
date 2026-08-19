@@ -18,7 +18,7 @@ conditions do not appear to be properly enforced.
 import hoomd
 from hoomd.data.parameterdicts import ParameterDict
 from hoomd.mpcd import _mpcd
-from hoomd.mpcd.geometry import Geometry, ParallelPlates
+from hoomd.mpcd.geometry import Geometry
 from hoomd.operation import Operation
 import inspect
 
@@ -138,17 +138,9 @@ class GeometryFiller(VirtualParticleFiller):
     specified `geometry`. The algorithm for doing the filling depends on the
     specific `geometry`.
 
-    Some geometries are filled by rejection sampling. Those fillers first
-    determine which collision cells can possibly contain both fluid and solid,
-    then draw virtual particles only in those cells. The classification is
-    performed once and repeated only if the box changes. `num_trials` and
-    `max_per_cell` are used only by these fillers and are ignored otherwise.
-
-    .. rubric:: Limitations:
-
-    This filler **does not** currently support the
-    :class:`~hoomd.mpcd.geometry.PlanarPore` geometry for any non-cubic cell
-    shape. An exception will be raised in this case.
+    Those fillers first determine which collision cells can possibly contain
+    both fluid and solid, then draw virtual particles only in those cells.
+    The classification is performed once and repeated only if the box changes.
 
     .. rubric:: Example:
 
@@ -201,7 +193,6 @@ class GeometryFiller(VirtualParticleFiller):
         )
         param_dict["geometry"] = geometry
         self._param_dict.update(param_dict)
-
         self._num_trials = int(num_trials)
         self._max_per_cell = 0 if max_per_cell is None else int(max_per_cell)
 
@@ -233,25 +224,15 @@ class GeometryFiller(VirtualParticleFiller):
         class_ = getattr(*class_info, None)
         assert class_ is not None, "Virtual particle filler for geometry not found"
 
-        # only the rejection fillers classify cells and take extra arguments
-        if hasattr(class_, "num_trials"):
-            self._cpp_obj = class_(
-                sim.state._cpp_sys_def,
-                self.type,
-                self.density,
-                self.kT,
-                self.geometry._cpp_obj,
-                self._num_trials,
-                self._max_per_cell,
-            )
-        else:
-            self._cpp_obj = class_(
-                sim.state._cpp_sys_def,
-                self.type,
-                self.density,
-                self.kT,
-                self.geometry._cpp_obj,
-            )
+        self._cpp_obj = class_(
+            sim.state._cpp_sys_def,
+            self.type,
+            self.density,
+            self.kT,
+            self.geometry._cpp_obj,
+            self.num_trials,
+            self.max_per_cell,
+        )
 
         super()._attach_hook()
 
@@ -263,8 +244,6 @@ class GeometryFiller(VirtualParticleFiller):
     def _register_cpp_class(cls, geometry, module, cpp_class_name):
         cls._cpp_class_map[geometry] = (module, cpp_class_name)
 
-
-GeometryFiller._register_cpp_class(ParallelPlates, _mpcd, "ParallelPlateGeometryFiller")
 
 __all__ = [
     "GeometryFiller",

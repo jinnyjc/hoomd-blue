@@ -378,4 +378,19 @@ UP_TEST(sphere_rejection_fill_basic_gpu)
     sphere_rejection_fill_basic_test<mpcd::RejectionVirtualParticleFillerGPU<mpcd::SphereGeometry>>(
         std::make_shared<ExecutionConfiguration>(ExecutionConfiguration::GPU));
     }
+UP_TEST(plates_rejection_fill_gpu)
+    {
+    plates_rejection_fill_test<
+        mpcd::RejectionVirtualParticleFillerGPU<mpcd::ParallelPlateGeometry>>(
+        std::make_shared<ExecutionConfiguration>(ExecutionConfiguration::GPU),
+        Scalar(0.0));
+    }
+
+UP_TEST(plates_rejection_fill_tilted_gpu)
+    {
+    plates_rejection_fill_test<
+        mpcd::RejectionVirtualParticleFillerGPU<mpcd::ParallelPlateGeometry>>(
+        std::make_shared<ExecutionConfiguration>(ExecutionConfiguration::GPU),
+        Scalar(0.5));
+    }
 #endif // ENABLE_HIP
