@@ -18,7 +18,7 @@ conditions do not appear to be properly enforced.
 import hoomd
 from hoomd.data.parameterdicts import ParameterDict
 from hoomd.mpcd import _mpcd
-from hoomd.mpcd.geometry import Geometry, ParallelPlates
+from hoomd.mpcd.geometry import Geometry
 from hoomd.operation import Operation
 import inspect
 
@@ -129,17 +129,18 @@ class GeometryFiller(VirtualParticleFiller):
         density (float): Particle number density.
         kT (hoomd.variant.variant_like): Temperature of particles.
         geometry (hoomd.mpcd.geometry.Geometry): Surface to fill around.
+        num_trials (int): Trial points drawn per collision cell when determining
+            which cells need to be filled.
+        max_per_cell (int): Maximum number of particles drawn per collision
+            cell, or `None` to determine it from `density`.
 
     Virtual particles are inserted in cells whose volume is sliced by the
     specified `geometry`. The algorithm for doing the filling depends on the
     specific `geometry`.
 
-    .. rubric:: Limitations:
-
-    This filler **does not** currently support triclinic boxes for any
-    :class:`~hoomd.mpcd.geometry.Geometry`. Additionally, this filler does not
-    support the :class:`~hoomd.mpcd.geometry.PlanarPore` geometry for any
-    non-cubic cell shape. Exceptions will be raised in these cases.
+    Those fillers first determine which collision cells can possibly contain
+    both fluid and solid, then draw virtual particles only in those cells.
+    The classification is performed once and repeated only if the box changes.
 
     .. rubric:: Example:
 
@@ -160,6 +161,23 @@ class GeometryFiller(VirtualParticleFiller):
     Attributes:
         geometry (hoomd.mpcd.geometry.Geometry): Surface to fill around
             (*read only*).
+
+        max_per_cell (int): Maximum number of particles drawn per collision
+            cell, or 0 to determine it from `density` (*read only*).
+
+            The number drawn per cell is Poisson distributed with mean equal to
+            ``density`` times the cell volume, and this sets how much memory is
+            reserved per cell. If the number drawn would exceed it, the count is
+            clamped. The automatic bound is eight standard deviations above the
+            mean, which is exceeded with probability below 1e-7.
+
+        num_trials (int): Trial points drawn per collision cell when determining
+            which cells need to be filled (*read only*).
+
+            A cell is filled only if at least one trial point falls on each side
+            of the surface, so this must be large enough to resolve features
+            that are thin compared to a collision cell.
+
     """
 
     __doc__ = inspect.cleandoc(__doc__).replace(
@@ -167,7 +185,7 @@ class GeometryFiller(VirtualParticleFiller):
     )
     _cpp_class_map = {}
 
-    def __init__(self, type, density, kT, geometry):
+    def __init__(self, type, density, kT, geometry, num_trials=1000, max_per_cell=None):
         super().__init__(type, density, kT)
 
         param_dict = ParameterDict(
@@ -175,6 +193,18 @@ class GeometryFiller(VirtualParticleFiller):
         )
         param_dict["geometry"] = geometry
         self._param_dict.update(param_dict)
+        self._num_trials = int(num_trials)
+        self._max_per_cell = 0 if max_per_cell is None else int(max_per_cell)
+
+    @property
+    def num_trials(self):
+        """int: Trial points drawn per collision cell during classification."""
+        return self._num_trials
+
+    @property
+    def max_per_cell(self):
+        """int: Maximum particles drawn per collision cell, 0 for automatic."""
+        return self._max_per_cell
 
     def _attach_hook(self):
         sim = self._simulation
@@ -200,6 +230,8 @@ class GeometryFiller(VirtualParticleFiller):
             self.density,
             self.kT,
             self.geometry._cpp_obj,
+            self.num_trials,
+            self.max_per_cell,
         )
 
         super()._attach_hook()
@@ -212,8 +244,6 @@ class GeometryFiller(VirtualParticleFiller):
     def _register_cpp_class(cls, geometry, module, cpp_class_name):
         cls._cpp_class_map[geometry] = (module, cpp_class_name)
 
-
-GeometryFiller._register_cpp_class(ParallelPlates, _mpcd, "ParallelPlateGeometryFiller")
 
 __all__ = [
     "GeometryFiller",

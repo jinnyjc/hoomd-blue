@@ -1,4 +1,4 @@
-// Copyright (c) 2009-2025 The Regents of the University of Michigan.
+// Copyright (c) 2009-2026 The Regents of the University of Michigan.
 // Part of HOOMD-blue, released under the BSD 3-Clause License.
 
 /*!
@@ -160,9 +160,9 @@ template<class Force> void TriangulatedGeometryStreamingMethodGPU<Force>::stream
     ArrayHandle<Scalar4> d_vel(this->m_mpcd_pdata->getVelocities(),
                                access_location::device,
                                access_mode::readwrite);
-    ArrayHandle<Scalar3> d_vertices(this->m_geom->getVertices(),
-                                    access_location::device,
-                                    access_mode::read);
+    ArrayHandle<ShortReal3> d_vertices(this->m_geom->getVertices(),
+                                       access_location::device,
+                                       access_mode::read);
     ArrayHandle<uint3> d_triangles(this->m_geom->getTriangles(),
                                    access_location::device,
                                    access_mode::read);

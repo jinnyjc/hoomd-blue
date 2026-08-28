@@ -1,4 +1,4 @@
-// Copyright (c) 2009-2025 The Regents of the University of Michigan.
+// Copyright (c) 2009-2026 The Regents of the University of Michigan.
 // Part of HOOMD-blue, released under the BSD 3-Clause License.
 
 /*!
@@ -58,7 +58,7 @@ class TriangulatedGeometry
     unsigned int getNumTotalTriangles() const;
 
     //! Get the vertex list
-    const GPUArray<Scalar3>& getVertices() const;
+    const GPUArray<ShortReal3>& getVertices() const;
 
     //! Get the triangle list
     const GPUArray<uint3>& getTriangles() const;
@@ -82,8 +82,8 @@ class TriangulatedGeometry
     unsigned int m_num_total_vertices;  //!< Number of total vertices
     unsigned int m_num_total_triangles; //!< Number of total triangles
 
-    GPUArray<Scalar3> m_vertices; //!< Vertex list
-    GPUArray<uint3> m_triangles;  //!< Triangle list
+    GPUArray<ShortReal3> m_vertices; //!< Vertex list
+    GPUArray<uint3> m_triangles;     //!< Triangle list
 
     const Scalar m_unwrap_distance; //!< Distance used to unwrap triangles
 
@@ -93,7 +93,7 @@ class TriangulatedGeometry
     hoomd::detail::AABBTree m_triangle_tree;           //!< BVH for triangles
 
     //! Unwrap the triangles in unwrap distance
-    void unwrapTriangles();
+    void unwrapTriangles(std::vector<Scalar3>& vertices, std::vector<uint3>& triangles);
 
     //! build one AABB for each total triangle
     void buildTriangleAABBs();
@@ -118,10 +118,10 @@ class TriangulatedGeometryAccess : public LocalDataAccess<Output, TriangulatedGe
         {
         const size_t n
             = m_unwrapped ? this->m_data.getNumTotalVertices() : this->m_data.getNumVertices();
-        return this->template getBuffer<Scalar3, Scalar>(m_vertices_handle,
-                                                         &TriangulatedGeometry::getVertices,
-                                                         std::vector<size_t> {n, 3},
-                                                         false);
+        return this->template getBuffer<ShortReal3, ShortReal>(m_vertices_handle,
+                                                               &TriangulatedGeometry::getVertices,
+                                                               std::vector<size_t> {n, 3},
+                                                               false);
         }
 
     Output getTriangles()
@@ -142,7 +142,7 @@ class TriangulatedGeometryAccess : public LocalDataAccess<Output, TriangulatedGe
         }
 
     private:
-    std::unique_ptr<ArrayHandle<Scalar3>> m_vertices_handle;
+    std::unique_ptr<ArrayHandle<ShortReal3>> m_vertices_handle;
     std::unique_ptr<ArrayHandle<uint3>> m_triangles_handle;
     bool m_unwrapped;
     };

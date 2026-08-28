@@ -36,7 +36,6 @@ void export_CosineChannelGeometryFiller(pybind11::module&);
 void export_CosineExpansionContractionGeometry(pybind11::module&);
 void export_CosineExpansionContractionGeometryFiller(pybind11::module&);
 void export_Integrator(pybind11::module&);
-void export_ManualVirtualParticleFiller(pybind11::module&);
 void export_NoForce(pybind11::module&);
 void export_ParallelPlateGeometry(pybind11::module&);
 void export_ParallelPlateGeometryFiller(pybind11::module&);
@@ -227,7 +226,6 @@ PYBIND11_MODULE(_mpcd, m)
     export_CosineExpansionContractionGeometry(m);
     export_CosineExpansionContractionGeometryFiller(m);
     export_Integrator(m);
-    export_ManualVirtualParticleFiller(m);
     export_NoForce(m);
     export_ParallelPlateGeometry(m);
     export_ParallelPlateGeometryFiller(m);

@@ -12,9 +12,6 @@ set(_mpcd_cc_sources
     CollisionMethod.cc
     Communicator.cc
     Integrator.cc
-    ManualVirtualParticleFiller.cc
-    ParallelPlateGeometryFiller.cc
-    PlanarPoreGeometryFiller.cc
     ReverseNonequilibriumShearFlow.cc
     Sorter.cc
     SRDCollisionMethod.cc
@@ -36,12 +33,9 @@ set(_mpcd_headers
     Communicator.h
     CommunicatorUtilities.h
     Integrator.h
-    ManualVirtualParticleFiller.h
     ParticleData.h
     ParticleDataSnapshot.h
     ParticleDataUtilities.h
-    ParallelPlateGeometryFiller.h
-    PlanarPoreGeometryFiller.h
     RejectionVirtualParticleFiller.h
     ReverseNonequilibriumShearFlow.h
     ReverseNonequilibriumShearFlowUtilities.h
@@ -77,8 +71,6 @@ if(ENABLE_HIP)
         CellThermoComputeGPU.cc
         CellListGPU.cc
         CommunicatorGPU.cc
-        ParallelPlateGeometryFillerGPU.cc
-        PlanarPoreGeometryFillerGPU.cc
         ReverseNonequilibriumShearFlowGPU.cc
         SorterGPU.cc
         SRDCollisionMethodGPU.cc
@@ -99,11 +91,7 @@ if(ENABLE_HIP)
         CollisionMethod.cuh
         CommunicatorGPU.cuh
         CommunicatorGPU.h
-        ParallelPlateGeometryFillerGPU.cuh
-        ParallelPlateGeometryFillerGPU.h
         ParticleData.cuh
-        PlanarPoreGeometryFillerGPU.cuh
-        PlanarPoreGeometryFillerGPU.h
         RejectionVirtualParticleFillerGPU.cuh
         RejectionVirtualParticleFillerGPU.h
         ReverseNonequilibriumShearFlowGPU.cuh
@@ -123,8 +111,6 @@ if(ENABLE_HIP)
         CollisionMethod.cu
         CommunicatorGPU.cu
         ParticleData.cu
-        ParallelPlateGeometryFillerGPU.cu
-        PlanarPoreGeometryFillerGPU.cu
         RejectionVirtualParticleFillerGPU.cu
         ReverseNonequilibriumShearFlowGPU.cu
         SorterGPU.cu
@@ -246,11 +232,6 @@ endforeach()
 
 # virtual particle fillers for the different geometries
 foreach(_geometry ${_geometries})
-    # skip fillers that are already done manually, guessed by filename
-    if(${_geometry}Filler.cc IN_LIST _mpcd_cc_sources)
-        continue()
-    endif()
-
     configure_file(
         RejectionVirtualParticleFiller.cc.inc
         RejectionVirtualParticleFiller${_geometry}.cc
