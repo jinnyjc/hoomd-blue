@@ -219,7 +219,7 @@ template<class Geometry> void RejectionVirtualParticleFiller<Geometry>::classify
 
                 hoomd::RandomGenerator rng(
                     hoomd::Seed(hoomd::RNGIdentifier::VirtualParticleFiller, 0, seed),
-                    hoomd::Counter(getGlobalCellIndex(gi, gj, gk), m_filler_id, 1));
+                    hoomd::Counter(getGlobalCellIndex(gi, gj, gk), m_filler_id, 0));
 
                 // 0 until the first usable trial point, then -1 if only inside points have been
                 // seen so far and +1 if only outside points have been seen
@@ -376,7 +376,7 @@ template<class Geometry> void RejectionVirtualParticleFiller<Geometry>::fill(uin
 
         hoomd::RandomGenerator rng(
             hoomd::Seed(hoomd::RNGIdentifier::VirtualParticleFiller, timestep, seed),
-            hoomd::Counter(getGlobalCellIndex(gi, gj, gk), m_filler_id, 0));
+            hoomd::Counter(getGlobalCellIndex(gi, gj, gk), m_filler_id, 1));
 
         unsigned int num_in_cell = hoomd::PoissonDistribution<Scalar>(mean_per_cell)(rng);
         if (num_in_cell > max_per_cell)

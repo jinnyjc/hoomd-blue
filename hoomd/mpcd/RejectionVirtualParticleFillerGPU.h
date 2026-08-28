@@ -54,7 +54,8 @@ class PYBIND11_EXPORT RejectionVirtualParticleFillerGPU
         m_tuner1.reset(new Autotuner<1>({AutotunerBase::makeBlockSizeRange(this->m_exec_conf)},
                                         this->m_exec_conf,
                                         "mpcd_rejection_filler_classify_cells"));
-        m_tuner2.reset(new Autotuner<1>({AutotunerBase::makeBlockSizeRange(this->m_exec_conf)},
+        m_tuner2.reset(new Autotuner<2>({AutotunerBase::makeBlockSizeRange(this->m_exec_conf),
+                                         AutotunerBase::getTppListPow2(this->m_exec_conf)},
                                         this->m_exec_conf,
                                         "mpcd_rejection_filler_draw_particles"));
         m_tuner3.reset(new Autotuner<1>({AutotunerBase::makeBlockSizeRange(this->m_exec_conf)},
@@ -76,7 +77,7 @@ class PYBIND11_EXPORT RejectionVirtualParticleFillerGPU
     GPUArray<unsigned int> m_keep_indices;  //!< Indices for particles out of bounds for geometry
     GPUFlags<unsigned int> m_num_keep;      //!< Number of particles to keep
     std::shared_ptr<Autotuner<1>> m_tuner1; //!< Autotuner for cell classification
-    std::shared_ptr<Autotuner<1>> m_tuner2; //!< Autotuner for drawing particles
+    std::shared_ptr<Autotuner<2>> m_tuner2; //!< Autotuner for drawing particles
     std::shared_ptr<Autotuner<1>> m_tuner3; //!< Autotuner for particle tagging
     };
 
@@ -265,7 +266,8 @@ template<class Geometry> void RejectionVirtualParticleFillerGPU<Geometry>::fill(
                                                       timestep,
                                                       this->m_sysdef->getSeed(),
                                                       this->m_filler_id,
-                                                      m_tuner2->getParam()[0]);
+                                                      m_tuner2->getParam()[0],
+                                                      m_tuner2->getParam()[1]);
         m_tuner2->begin();
         mpcd::gpu::draw_virtual_particles<Geometry>(args, *(this->m_geom));
         if (this->m_exec_conf->isCUDAErrorCheckingEnabled())

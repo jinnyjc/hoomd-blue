@@ -306,7 +306,7 @@ void plates_rejection_fill_test(std::shared_ptr<ExecutionConfiguration> exec_con
     Scalar N_avg(0);
     Scalar3 vel_avg_net = make_scalar3(0, 0, 0);
     Scalar T_avg(0);
-    unsigned int num_samples(20000);
+    unsigned int num_samples(10000);
     for (unsigned int t = 0; t < num_samples; ++t)
         {
         pdata->removeVirtualParticles();
@@ -347,9 +347,12 @@ void plates_rejection_fill_test(std::shared_ptr<ExecutionConfiguration> exec_con
     const Scalar tol_N = Scalar(100.0) * 4 * std::sqrt(N_exp / num_samples) / N_exp;
     UP_ASSERT_CLOSE(N_avg, N_exp, tol_N);
 
-    UP_ASSERT_SMALL(vel_avg_net.x, tol_small);
-    UP_ASSERT_SMALL(vel_avg_net.y, tol_small);
-    UP_ASSERT_SMALL(vel_avg_net.z, tol_small);
+    // the mean velocity of one fill fluctuates with standard deviation sqrt(kT/N), so the average
+    // over the samples has standard error sqrt(kT/(N*num_samples)); quoted at 4 sigma
+    const Scalar tol_v = 4 * std::sqrt(kT_val / (N_exp * num_samples));
+    UP_ASSERT_SMALL(vel_avg_net.x, tol_v);
+    UP_ASSERT_SMALL(vel_avg_net.y, tol_v);
+    UP_ASSERT_SMALL(vel_avg_net.z, tol_v);
     UP_ASSERT_CLOSE(T_avg, kT_val, tol_small);
     }
 

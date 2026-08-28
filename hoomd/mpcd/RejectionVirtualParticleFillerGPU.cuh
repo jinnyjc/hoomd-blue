@@ -79,13 +79,15 @@ struct draw_virtual_particles_args_t
                                   const uint64_t _timestep,
                                   const unsigned int _seed,
                                   const unsigned int _filler_id,
-                                  const unsigned int _block_size)
+                                  const unsigned int _block_size,
+                                  const unsigned int _threads_per_cell)
         : d_tmp_pos(_d_tmp_pos), d_tmp_vel(_d_tmp_vel), d_keep_particles(_d_keep_particles),
           d_fill_cells(_d_fill_cells), num_fill_cells(_num_fill_cells), global_box(_global_box),
           draw_box(_draw_box), local_dim(_local_dim), global_dim(_global_dim), origin(_origin),
           inv_dim(_inv_dim), grid_shift(_grid_shift), mean_per_cell(_mean_per_cell),
           max_per_cell(_max_per_cell), vel_factor(_vel_factor), type(_type), timestep(_timestep),
-          seed(_seed), filler_id(_filler_id), block_size(_block_size)
+          seed(_seed), filler_id(_filler_id), block_size(_block_size),
+          threads_per_cell(_threads_per_cell)
         {
         }
 
@@ -109,6 +111,7 @@ struct draw_virtual_particles_args_t
     const unsigned int seed;
     const unsigned int filler_id;
     const unsigned int block_size;
+    const unsigned int threads_per_cell;
     };
 
 // Function declarations
@@ -221,7 +224,7 @@ __global__ void classify_cells(bool* d_flags,
 
     hoomd::RandomGenerator rng(
         hoomd::Seed(hoomd::RNGIdentifier::VirtualParticleFiller, 0, seed),
-        hoomd::Counter(globalCellIndex(gi, gj, gk, global_dim), filler_id, 1));
+        hoomd::Counter(globalCellIndex(gi, gj, gk, global_dim), filler_id, 0));
 
     bool found = false;
 
@@ -281,14 +284,15 @@ __global__ void classify_cells(bool* d_flags,
  * \param timestep Current timestep
  * \param seed User seed for RNG
  * \param filler_id Identifier for the filler (rng argument)
+ * \param threads_per_cell Number of threads that draw for each cell
  * \param geom Confining geometry
  *
  * \tparam Geometry type of the confined geometry \a geom
  *
  * \b implementation
- * We assign one thread per cell. Each cell owns a fixed block of max_per_cell entries so that
- * the result does not depend on how the threads are scheduled, and the unused entries are
- * flagged so that the compaction drops them.
+ * Cells are processed by groups of \a threads_per_cell threads. Each cell owns a fixed
+ * block of \a max_per_cell entries so that the result does not depend on how the threads
+ * are scheduled, and the unused entries are flagged so that the compaction drops them.
  */
 template<class Geometry>
 __global__ void draw_virtual_particles(Scalar4* d_tmp_pos,
@@ -310,12 +314,15 @@ __global__ void draw_virtual_particles(Scalar4* d_tmp_pos,
                                        const uint64_t timestep,
                                        const unsigned int seed,
                                        const unsigned int filler_id,
+                                       const unsigned int threads_per_cell,
                                        const Geometry geom)
     {
-    // one thread per cell
-    const unsigned int n = blockIdx.x * blockDim.x + threadIdx.x;
-    if (n >= num_fill_cells)
+    // multiple threads per cell
+    const unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= num_fill_cells * threads_per_cell)
         return;
+    const unsigned int n = idx / threads_per_cell;
+    const unsigned int offset = idx % threads_per_cell;
 
     const unsigned int cell = d_fill_cells[n];
     const unsigned int i = cell % local_dim.x;
@@ -338,16 +345,20 @@ __global__ void draw_virtual_particles(Scalar4* d_tmp_pos,
                                         Scalar(0.5) * draw_box.getL().y,
                                         Scalar(0.5) * draw_box.getL().z);
 
-    hoomd::RandomGenerator rng(
+    hoomd::RandomGenerator rng_cell(
         hoomd::Seed(hoomd::RNGIdentifier::VirtualParticleFiller, timestep, seed),
-        hoomd::Counter(globalCellIndex(gi, gj, gk, global_dim), filler_id, 0));
+        hoomd::Counter(globalCellIndex(gi, gj, gk, global_dim), filler_id, 1));
 
-    unsigned int num_in_cell = hoomd::PoissonDistribution<Scalar>(mean_per_cell)(rng);
+    unsigned int num_in_cell = hoomd::PoissonDistribution<Scalar>(mean_per_cell)(rng_cell);
     if (num_in_cell > max_per_cell)
         num_in_cell = max_per_cell;
 
+    hoomd::RandomGenerator rng(
+        hoomd::Seed(hoomd::RNGIdentifier::VirtualParticleFiller, timestep, seed),
+        hoomd::Counter(globalCellIndex(gi, gj, gk, global_dim), filler_id, 2 + offset));
+
     const unsigned int base = n * max_per_cell;
-    for (unsigned int p = 0; p < max_per_cell; ++p)
+    for (unsigned int p = offset; p < max_per_cell; p += threads_per_cell)
         {
         if (p >= num_in_cell)
             {
@@ -439,7 +450,8 @@ cudaError_t draw_virtual_particles(const draw_virtual_particles_args_t& args, co
     const unsigned int max_block_size = attr.maxThreadsPerBlock;
 
     unsigned int run_block_size = min(args.block_size, max_block_size);
-    dim3 grid(args.num_fill_cells / run_block_size + 1);
+    const unsigned int num_threads = args.num_fill_cells * args.threads_per_cell;
+    dim3 grid(num_threads / run_block_size + 1);
     mpcd::gpu::kernel::draw_virtual_particles<Geometry>
         <<<grid, run_block_size>>>(args.d_tmp_pos,
                                    args.d_tmp_vel,
@@ -460,6 +472,7 @@ cudaError_t draw_virtual_particles(const draw_virtual_particles_args_t& args, co
                                    args.timestep,
                                    args.seed,
                                    args.filler_id,
+                                   args.threads_per_cell,
                                    geom);
     return cudaSuccess;
     }
