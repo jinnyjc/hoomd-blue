@@ -44,7 +44,7 @@ void sphere_rejection_fill_basic_test(std::shared_ptr<ExecutionConfiguration> ex
     auto sphere = std::make_shared<const mpcd::SphereGeometry>(r, true);
     std::shared_ptr<Variant> kT = std::make_shared<VariantConstant>(1.5);
     std::shared_ptr<mpcd::RejectionVirtualParticleFiller<mpcd::SphereGeometry>> filler
-        = std::make_shared<F>(sysdef, "B", 2.0, kT, sphere, 1000, 0);
+        = std::make_shared<F>(sysdef, "B", 2.0, kT, sphere, 0);
     filler->setCellList(cl);
 
     /*
@@ -116,8 +116,7 @@ void sphere_rejection_fill_basic_test(std::shared_ptr<ExecutionConfiguration> ex
             }
         UP_ASSERT_EQUAL(N_out, pdata->getNVirtual());
         UP_ASSERT_GREATER(N_out, Nfill_0);
-
-        // the second fill must reuse the same set of cells rather than classifying again
+        // the number of filled cells should not change between fills
         UP_ASSERT_EQUAL(num_fill_cells_0, num_fill_cells_1);
         }
 
@@ -190,13 +189,13 @@ void sphere_rejection_fill_basic_test(std::shared_ptr<ExecutionConfiguration> ex
 
 //! Check the virtual particles filled outside parallel plates
 /*!
- * The walls sit at +/- separation/2 = +/- 2.5, so they cut the outermost cells exactly in half.
- * Classification must find those cells and no others, and they cover the whole solid region, so
- * the mean number of particles is known:
- *   N_exp = density * Lxz^2 * (Ly - separation)
+ * The walls sit at +/- separation/2 = +/- 7.5, so they cut the cells containing them exactly
+ * in half. Classification must find those cells and no others, so the mean number of particles
+ * is known:
+ *   N_exp = density * (1/2) * num_fill_cells * a^3, where a is the cell size.
  *
- * The walls are half a cell from a boundary, which is also the largest grid shift, so the same
- * cells are marked whether grid shifting is on or off and none of the expected values change.
+ * The walls sit half a cell from a cell boundary, which is also the largest grid shift, so the
+ * same cells are marked whether grid shifting is on or off and none of the expected values change.
  *
  * An xy tilt shears each y layer along x. It leaves the walls, the extent of a cell along y, and
  * the volume alone, so the expected values are the same as in the orthorhombic box.
@@ -204,16 +203,16 @@ void sphere_rejection_fill_basic_test(std::shared_ptr<ExecutionConfiguration> ex
 template<class F>
 void plates_rejection_fill_test(std::shared_ptr<ExecutionConfiguration> exec_conf, Scalar xy)
     {
-    const Scalar Lxz = 4.0;
-    const Scalar Ly = 6.0;
+    const Scalar Lxz = 10.0;
+    const Scalar Ly = 20.0;
     const Scalar a = 1.0;
-    const Scalar separation = 5.0;
+    const Scalar separation = 15.0;
     const Scalar density = 10.0;
     const Scalar kT_val = 1.5;
 
-    // 4 x 4 cells in each wall layer, two layers
-    const unsigned int num_fill_cells_exp = 32;
-    const Scalar N_exp = density * Lxz * Lxz * (Ly - separation);
+    // 10 x 10 cells in each wall layer, two layers
+    const unsigned int num_fill_cells_exp = 200;
+    const Scalar N_exp = density * Scalar(0.5) * num_fill_cells_exp;
 
     std::shared_ptr<SnapshotSystemData<Scalar>> snap(new SnapshotSystemData<Scalar>());
     snap->global_box = std::make_shared<BoxDim>(Lxz, Ly, Lxz);
@@ -233,7 +232,7 @@ void plates_rejection_fill_test(std::shared_ptr<ExecutionConfiguration> exec_con
     auto plates = std::make_shared<const mpcd::ParallelPlateGeometry>(separation, 0.0, true);
     std::shared_ptr<Variant> kT = std::make_shared<VariantConstant>(kT_val);
     std::shared_ptr<mpcd::RejectionVirtualParticleFiller<mpcd::ParallelPlateGeometry>> filler
-        = std::make_shared<F>(sysdef, "B", density, kT, plates, 1000, 0);
+        = std::make_shared<F>(sysdef, "B", density, kT, plates, 0);
     filler->setCellList(cl);
 
     /*
@@ -296,7 +295,7 @@ void plates_rejection_fill_test(std::shared_ptr<ExecutionConfiguration> exec_con
             }
         UP_ASSERT_EQUAL(N_out, pdata->getNVirtual());
         UP_ASSERT_GREATER(N_out, Nfill_0);
-        // the second fill must reuse the same set of cells rather than classifying again
+        // the number of filled cells should not change between fills
         UP_ASSERT_EQUAL(num_fill_cells_0, num_fill_cells_1);
         }
 
@@ -343,8 +342,8 @@ void plates_rejection_fill_test(std::shared_ptr<ExecutionConfiguration> exec_con
     vel_avg_net /= num_samples;
 
     // the count per fill is Poisson, so the standard error of the mean is sqrt(N_exp/num_samples);
-    // quoted at 4 sigma, and UP_ASSERT_CLOSE takes a percentage
-    const Scalar tol_N = Scalar(100.0) * 4 * std::sqrt(N_exp / num_samples) / N_exp;
+    // quoted at 4 sigma
+    const Scalar tol_N = 4 * std::sqrt(N_exp / num_samples) / N_exp;
     UP_ASSERT_CLOSE(N_avg, N_exp, tol_N);
 
     // the mean velocity of one fill fluctuates with standard deviation sqrt(kT/N), so the average

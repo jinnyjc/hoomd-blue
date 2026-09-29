@@ -1,6 +1,7 @@
 # Copyright (c) 2009-2026 The Regents of the University of Michigan.
 # Part of HOOMD-blue, released under the BSD 3-Clause License.
 
+import numpy as np
 import pytest
 
 import hoomd
@@ -99,3 +100,76 @@ class TestGeometryFiller:
         sim = simulation_factory(snap)
         filler._attach(sim)
         pickling_check(filler)
+
+
+class TestTriangulatedGeometryFiller:
+    def _make_geometry(self, sim):
+        plates = np.array(
+            [
+                [-5, 4, -5],
+                [-5, 4, 5],
+                [5, 4, -5],
+                [5, 4, 5],
+                [-5, -4, 5],
+                [-5, -4, -5],
+                [5, -4, 5],
+                [5, -4, -5],
+            ]
+        )
+        triangles = np.array([[0, 1, 3], [0, 3, 2], [4, 7, 5], [4, 6, 7]], dtype=int)
+        return hoomd.mpcd.geometry.TriangulatedGeometry(
+            sim, plates, triangles, unwrap_distance=0.0
+        )
+
+    def test_create_and_attributes(self, simulation_factory, snap):
+        sim = simulation_factory(snap)
+        geom = self._make_geometry(sim)
+        filler = hoomd.mpcd.fill.TriangulatedGeometryFiller(
+            type="A", density=5.0, kT=1.0, geometry=geom
+        )
+
+        assert filler.geometry is geom
+        assert filler.type == "A"
+        assert filler.density == 5.0
+        assert isinstance(filler.kT, hoomd.variant.Constant)
+        assert filler.kT(0) == 1.0
+        assert filler.num_classify_trials == 0
+
+        filler._attach(sim)
+        assert filler.geometry is geom
+        assert filler.type == "A"
+        assert filler.density == 5.0
+        assert isinstance(filler.kT, hoomd.variant.Constant)
+        assert filler.kT(0) == 1.0
+        assert filler.num_classify_trials == 0
+
+        filler.density = 3.0
+        filler.kT = hoomd.variant.Ramp(2.0, 1.0, 0, 10)
+        assert filler.geometry is geom
+        assert filler.type == "A"
+        assert filler.density == 3.0
+        assert isinstance(filler.kT, hoomd.variant.Ramp)
+        assert filler.kT(0) == 2.0
+
+    def test_invalid_geometry(self):
+        plates = hoomd.mpcd.geometry.ParallelPlates(separation=8.0)
+        with pytest.raises(TypeError):
+            hoomd.mpcd.fill.TriangulatedGeometryFiller(
+                type="A", density=5.0, kT=1.0, geometry=plates
+            )
+
+    def test_run(self, simulation_factory, snap):
+        sim = simulation_factory(snap)
+        geom = self._make_geometry(sim)
+        filler = hoomd.mpcd.fill.TriangulatedGeometryFiller(
+            type="A", density=5.0, kT=1.0, geometry=geom
+        )
+        ig = hoomd.mpcd.Integrator(
+            dt=0.1,
+            collision_method=hoomd.mpcd.collide.StochasticRotationDynamics(
+                period=1, angle=130
+            ),
+            virtual_particle_fillers=[filler],
+        )
+        sim.operations.integrator = ig
+        sim.run(1)

@@ -39,17 +39,16 @@ class PYBIND11_EXPORT RejectionVirtualParticleFillerGPU
                                       Scalar density,
                                       std::shared_ptr<Variant> T,
                                       std::shared_ptr<const Geometry> geom,
-                                      unsigned int num_trials,
-                                      unsigned int max_per_cell)
+                                      unsigned int num_classify_trials)
         : mpcd::RejectionVirtualParticleFiller<Geometry>(sysdef,
                                                          type,
                                                          density,
                                                          T,
                                                          geom,
-                                                         num_trials,
-                                                         max_per_cell),
+                                                         num_classify_trials),
           m_cell_flags(this->m_exec_conf), m_keep_particles(this->m_exec_conf),
-          m_keep_indices(this->m_exec_conf), m_num_keep(this->m_exec_conf)
+          m_keep_indices(this->m_exec_conf), m_num_keep(this->m_exec_conf),
+          m_max_observed(this->m_exec_conf)
         {
         m_tuner1.reset(new Autotuner<1>({AutotunerBase::makeBlockSizeRange(this->m_exec_conf)},
                                         this->m_exec_conf,
@@ -76,6 +75,7 @@ class PYBIND11_EXPORT RejectionVirtualParticleFillerGPU
     GPUArray<bool> m_keep_particles; //!< Track whether particles are in/out of bounds for geometry
     GPUArray<unsigned int> m_keep_indices;  //!< Indices for particles out of bounds for geometry
     GPUFlags<unsigned int> m_num_keep;      //!< Number of particles to keep
+    GPUFlags<unsigned int> m_max_observed;  //!< Largest per-cell draw observed by the kernel
     std::shared_ptr<Autotuner<1>> m_tuner1; //!< Autotuner for cell classification
     std::shared_ptr<Autotuner<2>> m_tuner2; //!< Autotuner for drawing particles
     std::shared_ptr<Autotuner<1>> m_tuner3; //!< Autotuner for particle tagging
@@ -88,10 +88,10 @@ template<class Geometry> void RejectionVirtualParticleFillerGPU<Geometry>::class
     const BoxDim& global_box = this->m_pdata->getGlobalBox();
     const Scalar3 global_L = global_box.getL();
 
-    const uint3 local_dim = this->m_cl->getDim();
     const uint3 global_dim = this->m_cl->getGlobalDim();
     const int3 origin = this->m_cl->getOriginIndex();
-    const unsigned int num_cells = local_dim.x * local_dim.y * local_dim.z;
+    const Index3D& ci = this->m_cl->getCellIndexer();
+    const unsigned int num_cells = ci.getNumElements();
 
     const Scalar3 inv_dim = make_scalar3(Scalar(1.0) / global_dim.x,
                                          Scalar(1.0) / global_dim.y,
@@ -107,6 +107,16 @@ template<class Geometry> void RejectionVirtualParticleFillerGPU<Geometry>::class
     draw_box.setTiltFactors(global_box.getTiltFactorXY(),
                             global_box.getTiltFactorXZ(),
                             global_box.getTiltFactorYZ());
+
+    const Scalar mean_per_cell = this->m_density * draw_box.getVolume();
+
+    // when not set by the user, use the mean number of solvent particles in the sampling region
+    // plus eight standard deviations of the Poisson distribution
+    const unsigned int num_classify_trials
+        = (this->m_num_classify_trials > 0)
+              ? this->m_num_classify_trials
+              : static_cast<unsigned int>(
+                    std::ceil(mean_per_cell + Scalar(8.0) * std::sqrt(mean_per_cell)));
 
     if (num_cells > m_cell_flags.getNumElements())
         {
@@ -131,11 +141,11 @@ template<class Geometry> void RejectionVirtualParticleFillerGPU<Geometry>::class
         mpcd::gpu::classify_cells_args_t args(d_cell_flags.data,
                                               global_box,
                                               draw_box,
-                                              local_dim,
+                                              ci,
                                               global_dim,
                                               origin,
                                               inv_dim,
-                                              this->m_num_trials,
+                                              num_classify_trials,
                                               this->m_sysdef->getSeed(),
                                               this->m_filler_id,
                                               m_tuner1->getParam()[0]);
@@ -189,14 +199,13 @@ template<class Geometry> void RejectionVirtualParticleFillerGPU<Geometry>::fill(
     const BoxDim& global_box = this->m_pdata->getGlobalBox();
     const Scalar3 global_L = global_box.getL();
 
-    const uint3 local_dim = this->m_cl->getDim();
     const uint3 global_dim = this->m_cl->getGlobalDim();
     const int3 origin = this->m_cl->getOriginIndex();
+    const Index3D& ci = this->m_cl->getCellIndexer();
 
     const Scalar3 inv_dim = make_scalar3(Scalar(1.0) / global_dim.x,
                                          Scalar(1.0) / global_dim.y,
                                          Scalar(1.0) / global_dim.z);
-    const Scalar3 grid_shift = this->m_cl->getGridShift();
 
     BoxDim draw_box(
         make_scalar3(inv_dim.x * global_L.x, inv_dim.y * global_L.y, inv_dim.z * global_L.z));
@@ -207,98 +216,114 @@ template<class Geometry> void RejectionVirtualParticleFillerGPU<Geometry>::fill(
     const Scalar cell_volume
         = global_box.getVolume() / (global_dim.x * global_dim.y * global_dim.z);
     const Scalar mean_per_cell = this->m_density * cell_volume;
-    const unsigned int max_per_cell
-        = (this->m_max_per_cell > 0) ? this->m_max_per_cell
-                                     : static_cast<unsigned int>(std::ceil(
-                                           mean_per_cell + Scalar(8.0) * std::sqrt(mean_per_cell)));
 
-    // Step 1: size the temporary arrays with a fixed block of max_per_cell entries per fill cell
-    const unsigned int num_virtual_max = this->m_num_fill_cells * max_per_cell;
-    if (num_virtual_max > this->m_tmp_pos.getNumElements())
+    // initial guess for the per-cell capacity of the temporary arrays: eight standard deviations
+    // above the Poisson mean.
+    if (this->m_alloc_per_cell == 0)
         {
-        GPUArray<Scalar4> tmp_pos(num_virtual_max, this->m_exec_conf);
-        this->m_tmp_pos.swap(tmp_pos);
-        GPUArray<Scalar4> tmp_vel(num_virtual_max, this->m_exec_conf);
-        this->m_tmp_vel.swap(tmp_vel);
-        GPUArray<bool> keep_particles(num_virtual_max, this->m_exec_conf);
-        m_keep_particles.swap(keep_particles);
-        GPUArray<unsigned int> keep_indices(num_virtual_max, this->m_exec_conf);
-        m_keep_indices.swap(keep_indices);
+        this->m_alloc_per_cell = static_cast<unsigned int>(
+            std::ceil(mean_per_cell + Scalar(8.0) * std::sqrt(mean_per_cell)));
         }
 
-    // Step 2: draw a Poisson number of particles in each cell that needs filling, then keep only
-    // the ones that are outside the geometry
-    const Scalar vel_factor = fast::sqrt((*this->m_T)(timestep) / this->m_mpcd_pdata->getMass());
     unsigned int num_selected = 0;
+    unsigned int max_observed = this->m_alloc_per_cell;
+    do
         {
-        ArrayHandle<Scalar4> d_tmp_pos(this->m_tmp_pos,
-                                       access_location::device,
-                                       access_mode::overwrite);
-        ArrayHandle<Scalar4> d_tmp_vel(this->m_tmp_vel,
-                                       access_location::device,
-                                       access_mode::overwrite);
-        ArrayHandle<bool> d_keep_particles(m_keep_particles,
+        // grow the capacity if the previous attempt overflowed
+        this->m_alloc_per_cell = max_observed;
+        m_max_observed.resetFlags(0);
+
+        // Step 1: Size the temporary arrays for the current per-cell capacity.
+        const unsigned int num_virtual_max = this->m_num_fill_cells * this->m_alloc_per_cell;
+        if (num_virtual_max > this->m_tmp_pos.getNumElements())
+            {
+            GPUArray<Scalar4> tmp_pos(num_virtual_max, this->m_exec_conf);
+            this->m_tmp_pos.swap(tmp_pos);
+            GPUArray<Scalar4> tmp_vel(num_virtual_max, this->m_exec_conf);
+            this->m_tmp_vel.swap(tmp_vel);
+            GPUArray<bool> keep_particles(num_virtual_max, this->m_exec_conf);
+            m_keep_particles.swap(keep_particles);
+            GPUArray<unsigned int> keep_indices(num_virtual_max, this->m_exec_conf);
+            m_keep_indices.swap(keep_indices);
+            }
+
+        // Step 2: Draw a Poisson number of particles in each cell that needs filling, then keep
+        // only the ones that are outside the geometry
+        const Scalar vel_factor
+            = fast::sqrt((*this->m_T)(timestep) / this->m_mpcd_pdata->getMass());
+            {
+            ArrayHandle<Scalar4> d_tmp_pos(this->m_tmp_pos,
                                            access_location::device,
                                            access_mode::overwrite);
-        ArrayHandle<unsigned int> d_keep_indices(m_keep_indices,
-                                                 access_location::device,
-                                                 access_mode::overwrite);
-        ArrayHandle<unsigned int> d_fill_cells(this->m_fill_cells,
+            ArrayHandle<Scalar4> d_tmp_vel(this->m_tmp_vel,
+                                           access_location::device,
+                                           access_mode::overwrite);
+            ArrayHandle<bool> d_keep_particles(m_keep_particles,
                                                access_location::device,
-                                               access_mode::read);
+                                               access_mode::overwrite);
+            ArrayHandle<unsigned int> d_keep_indices(m_keep_indices,
+                                                     access_location::device,
+                                                     access_mode::overwrite);
+            ArrayHandle<unsigned int> d_fill_cells(this->m_fill_cells,
+                                                   access_location::device,
+                                                   access_mode::read);
 
-        mpcd::gpu::draw_virtual_particles_args_t args(d_tmp_pos.data,
-                                                      d_tmp_vel.data,
-                                                      d_keep_particles.data,
-                                                      d_fill_cells.data,
-                                                      this->m_num_fill_cells,
-                                                      global_box,
-                                                      draw_box,
-                                                      local_dim,
-                                                      global_dim,
-                                                      origin,
-                                                      inv_dim,
-                                                      grid_shift,
-                                                      mean_per_cell,
-                                                      max_per_cell,
-                                                      vel_factor,
-                                                      this->m_type,
-                                                      timestep,
-                                                      this->m_sysdef->getSeed(),
-                                                      this->m_filler_id,
-                                                      m_tuner2->getParam()[0],
-                                                      m_tuner2->getParam()[1]);
-        m_tuner2->begin();
-        mpcd::gpu::draw_virtual_particles<Geometry>(args, *(this->m_geom));
-        if (this->m_exec_conf->isCUDAErrorCheckingEnabled())
-            CHECK_CUDA_ERROR();
-        m_tuner2->end();
+            mpcd::gpu::draw_virtual_particles_args_t args(d_tmp_pos.data,
+                                                          d_tmp_vel.data,
+                                                          d_keep_particles.data,
+                                                          d_fill_cells.data,
+                                                          this->m_num_fill_cells,
+                                                          global_box,
+                                                          draw_box,
+                                                          ci,
+                                                          global_dim,
+                                                          origin,
+                                                          inv_dim,
+                                                          mean_per_cell,
+                                                          this->m_alloc_per_cell,
+                                                          vel_factor,
+                                                          this->m_type,
+                                                          timestep,
+                                                          this->m_sysdef->getSeed(),
+                                                          this->m_filler_id,
+                                                          m_tuner2->getParam()[0],
+                                                          m_tuner2->getParam()[1],
+                                                          m_max_observed.getDeviceFlags());
+            m_tuner2->begin();
+            mpcd::gpu::draw_virtual_particles<Geometry>(args, *(this->m_geom));
+            if (this->m_exec_conf->isCUDAErrorCheckingEnabled())
+                CHECK_CUDA_ERROR();
+            m_tuner2->end();
 
-            {
-            // compact the selected particles down with CUB
-            void* d_tmp_storage = NULL;
-            size_t tmp_storage_bytes = 0;
-            mpcd::gpu::compact_virtual_particle_indices(d_tmp_storage,
-                                                        tmp_storage_bytes,
-                                                        d_keep_particles.data,
-                                                        num_virtual_max,
-                                                        d_keep_indices.data,
-                                                        m_num_keep.getDeviceFlags());
-            ScopedAllocation<unsigned char> d_tmp_alloc(this->m_exec_conf->getCachedAllocator(),
-                                                        (tmp_storage_bytes > 0) ? tmp_storage_bytes
-                                                                                : 1);
-            d_tmp_storage = (void*)d_tmp_alloc();
+                {
+                // compact the selected particles down with CUB
+                void* d_tmp_storage = NULL;
+                size_t tmp_storage_bytes = 0;
+                mpcd::gpu::compact_virtual_particle_indices(d_tmp_storage,
+                                                            tmp_storage_bytes,
+                                                            d_keep_particles.data,
+                                                            num_virtual_max,
+                                                            d_keep_indices.data,
+                                                            m_num_keep.getDeviceFlags());
+                ScopedAllocation<unsigned char> d_tmp_alloc(
+                    this->m_exec_conf->getCachedAllocator(),
+                    (tmp_storage_bytes > 0) ? tmp_storage_bytes : 1);
+                d_tmp_storage = (void*)d_tmp_alloc();
 
-            // run selection
-            mpcd::gpu::compact_virtual_particle_indices(d_tmp_storage,
-                                                        tmp_storage_bytes,
-                                                        d_keep_particles.data,
-                                                        num_virtual_max,
-                                                        d_keep_indices.data,
-                                                        m_num_keep.getDeviceFlags());
+                // run selection
+                mpcd::gpu::compact_virtual_particle_indices(d_tmp_storage,
+                                                            tmp_storage_bytes,
+                                                            d_keep_particles.data,
+                                                            num_virtual_max,
+                                                            d_keep_indices.data,
+                                                            m_num_keep.getDeviceFlags());
+                }
+            num_selected = m_num_keep.readFlags();
             }
-        num_selected = m_num_keep.readFlags();
-        }
+
+        // the kernel only records draws that exceeded the capacity, so zero means no overflow
+        max_observed = m_max_observed.readFlags();
+        } while (max_observed > this->m_alloc_per_cell);
 
     // Step 3: Allocate memory for the new virtual particles and copy them in. The tags can only be
     // assigned now because the number that survived rejection is not known in advance.
@@ -351,10 +376,9 @@ template<class Geometry> void export_RejectionVirtualParticleFillerGPU(pybind11:
                             Scalar,
                             std::shared_ptr<Variant>,
                             std::shared_ptr<const Geometry>,
-                            unsigned int,
                             unsigned int>());
     }
     } // end namespace detail
     } // end namespace mpcd
-    } // namespace hoomd
+    } // end namespace hoomd
 #endif // MPCD_REJECTION_VIRTUAL_PARTICLE_FILLER_GPU_H_

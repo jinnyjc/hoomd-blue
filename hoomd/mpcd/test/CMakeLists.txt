@@ -8,6 +8,7 @@ set(TEST_LIST
     sorter
     srd_collision_method
     streaming_method
+    triangulated_filler
     virtual_particle
     )
 

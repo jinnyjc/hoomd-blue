@@ -24,7 +24,7 @@ namespace hoomd
 namespace mpcd
     {
 //! Triangulated geometry
-class TriangulatedGeometry
+class PYBIND11_EXPORT TriangulatedGeometry
     {
     public:
     //! Constructor

@@ -17,6 +17,7 @@ set(_mpcd_cc_sources
     SRDCollisionMethod.cc
     StreamingMethod.cc
     TriangulatedGeometry.cc
+    TriangulatedGeometryFiller.cc
     VirtualParticleFiller.cc
     )
 
@@ -43,6 +44,7 @@ set(_mpcd_headers
     SRDCollisionMethod.h
     StreamingMethod.h
     TriangulatedGeometry.h
+    TriangulatedGeometryFiller.h
     TriangulatedGeometryStreamingMethod.h
     VirtualParticleFiller.h
     )
