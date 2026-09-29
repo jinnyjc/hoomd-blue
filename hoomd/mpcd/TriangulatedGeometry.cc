@@ -1,4 +1,4 @@
-// Copyright (c) 2009-2025 The Regents of the University of Michigan.
+// Copyright (c) 2009-2026 The Regents of the University of Michigan.
 // Part of HOOMD-blue, released under the BSD 3-Clause License.
 
 /*!
@@ -26,19 +26,31 @@ TriangulatedGeometry::TriangulatedGeometry(std::shared_ptr<SystemDefinition> sys
       m_vertices(m_num_vertices, m_exec_conf), m_triangles(m_num_triangles, m_exec_conf),
       m_unwrap_distance(unwrap_distance), m_no_slip(no_slip)
     {
-    if (m_num_vertices > 0)
+    std::vector<Scalar3> unwrapped_vertices(vertices, vertices + m_num_vertices);
+    std::vector<uint3> unwrapped_triangles(triangles, triangles + m_num_triangles);
+
+    unwrapTriangles(unwrapped_vertices, unwrapped_triangles);
+
+    m_vertices.resize(m_num_total_vertices);
         {
-        ArrayHandle<Scalar3> h_vertices(m_vertices, access_location::host, access_mode::overwrite);
-        std::copy(vertices, vertices + m_num_vertices, h_vertices.data);
+        ArrayHandle<ShortReal3> h_vertices(m_vertices,
+                                           access_location::host,
+                                           access_mode::overwrite);
+        for (unsigned int i = 0; i < m_num_total_vertices; ++i)
+            {
+            const Scalar3& v = unwrapped_vertices[i];
+            h_vertices.data[i] = ShortReal3 {static_cast<ShortReal>(v.x),
+                                             static_cast<ShortReal>(v.y),
+                                             static_cast<ShortReal>(v.z)};
+            }
         }
 
-    if (m_num_triangles > 0)
+    m_triangles.resize(m_num_total_triangles);
         {
         ArrayHandle<uint3> h_triangles(m_triangles, access_location::host, access_mode::overwrite);
-        std::copy(triangles, triangles + m_num_triangles, h_triangles.data);
+        std::copy(unwrapped_triangles.begin(), unwrapped_triangles.end(), h_triangles.data);
         }
 
-    unwrapTriangles();
     buildTriangleAABBs();
     buildTree();
     }
@@ -63,7 +75,7 @@ unsigned int TriangulatedGeometry::getNumTotalTriangles() const
     return m_num_total_triangles;
     }
 
-const GPUArray<Scalar3>& TriangulatedGeometry::getVertices() const
+const GPUArray<ShortReal3>& TriangulatedGeometry::getVertices() const
     {
     return m_vertices;
     }
@@ -88,7 +100,8 @@ const hoomd::detail::AABBTree& TriangulatedGeometry::getTriangleTree() const
     return m_triangle_tree;
     }
 
-void TriangulatedGeometry::unwrapTriangles()
+void TriangulatedGeometry::unwrapTriangles(std::vector<Scalar3>& vertices,
+                                           std::vector<uint3>& triangles)
     {
     const BoxDim box = m_sysdef->getParticleData()->getBox();
     const uchar3 periodic = box.getPeriodic();
@@ -100,79 +113,75 @@ void TriangulatedGeometry::unwrapTriangles()
     std::vector<Scalar3> extra_vertices;
     std::vector<uint3> extra_triangles;
 
+    const Scalar3 ghost_width
+        = make_scalar3(m_unwrap_distance, m_unwrap_distance, m_unwrap_distance);
+
+    for (int i = -nx; i <= nx; ++i)
         {
-        ArrayHandle<Scalar3> h_base_vertices(m_vertices, access_location::host, access_mode::read);
-        ArrayHandle<uint3> h_base_triangles(m_triangles, access_location::host, access_mode::read);
-
-        const Scalar3 ghost_width
-            = make_scalar3(m_unwrap_distance, m_unwrap_distance, m_unwrap_distance);
-
-        for (int i = -nx; i <= nx; ++i)
+        for (int j = -ny; j <= ny; ++j)
             {
-            for (int j = -ny; j <= ny; ++j)
+            for (int k = -nz; k <= nz; ++k)
                 {
-                for (int k = -nz; k <= nz; ++k)
+                // skip the original image
+                if (i == 0 && j == 0 && k == 0)
+                    continue;
+
+                const int3 image = make_int3(i, j, k);
+
+                // for each image, unwrap all the vertices and check if they are inside of
+                // the box expanded by unwrap_distance
+                std::vector<Scalar3> shifted_vertices(m_num_vertices);
+                std::vector<bool> in_buffer(m_num_vertices, false);
+
+                for (unsigned vi = 0; vi < m_num_vertices; ++vi)
                     {
-                    // skip the original image
-                    if (i == 0 && j == 0 && k == 0)
+                    const Scalar3 vv = vertices[vi];
+
+                    const Scalar3 shifted = box.shift(vv, image);
+                    shifted_vertices[vi] = shifted;
+
+                    const Scalar3 f = box.makeFraction(shifted, ghost_width);
+
+                    in_buffer[vi]
+                        = (f.x >= Scalar(0.0) && f.x <= Scalar(1.0) && f.y >= Scalar(0.0)
+                           && f.y <= Scalar(1.0) && f.z >= Scalar(0.0) && f.z <= Scalar(1.0));
+                    }
+
+                // build a compact vertex list
+                std::map<unsigned int, unsigned int> vertex_map;
+                for (unsigned ti = 0; ti < m_num_triangles; ++ti)
+                    {
+                    const uint3 tt = triangles[ti];
+
+                    // skip if none of the vertex is in buffer
+                    if (!in_buffer[tt.x] && !in_buffer[tt.y] && !in_buffer[tt.z])
                         continue;
 
-                    const int3 image = make_int3(i, j, k);
+                    const unsigned int old_idx[3] = {tt.x, tt.y, tt.z};
+                    unsigned int new_idx[3];
 
-                    // for each image, unwrap all the vertices and check if they are inside of
-                    // the box expanded by unwrap_distance
-                    std::vector<Scalar3> shifted_vertices(m_num_vertices);
-                    std::vector<bool> in_buffer(m_num_vertices, false);
-
-                    for (unsigned vi = 0; vi < m_num_vertices; ++vi)
+                    for (unsigned int m = 0; m < 3; ++m)
                         {
-                        const Scalar3 vv = h_base_vertices.data[vi];
-
-                        const Scalar3 shifted = box.shift(vv, image);
-                        shifted_vertices[vi] = shifted;
-
-                        const Scalar3 f = box.makeFraction(shifted, ghost_width);
-
-                        in_buffer[vi]
-                            = (f.x >= Scalar(0.0) && f.x <= Scalar(1.0) && f.y >= Scalar(0.0)
-                               && f.y <= Scalar(1.0) && f.z >= Scalar(0.0) && f.z <= Scalar(1.0));
-                        }
-
-                    // build a compact vertex list
-                    std::map<unsigned int, unsigned int> vertex_map;
-                    for (unsigned ti = 0; ti < m_num_triangles; ++ti)
-                        {
-                        const uint3 tt = h_base_triangles.data[ti];
-
-                        // skip if none of the vertex is in buffer
-                        if (!in_buffer[tt.x] && !in_buffer[tt.y] && !in_buffer[tt.z])
-                            continue;
-
-                        const unsigned int old_idx[3] = {tt.x, tt.y, tt.z};
-                        unsigned int new_idx[3];
-
-                        for (unsigned int m = 0; m < 3; ++m)
+                        auto entry = vertex_map.find(old_idx[m]);
+                        if (entry == vertex_map.end())
                             {
-                            auto entry = vertex_map.find(old_idx[m]);
-                            if (entry == vertex_map.end())
-                                {
-                                const unsigned int idx
-                                    = static_cast<unsigned int>(extra_vertices.size());
-                                extra_vertices.push_back(shifted_vertices[old_idx[m]]);
-                                vertex_map[old_idx[m]] = idx;
-                                new_idx[m] = idx;
-                                }
-                            else
-                                {
-                                new_idx[m] = entry->second;
-                                }
+                            const unsigned int idx
+                                = static_cast<unsigned int>(extra_vertices.size());
+                            extra_vertices.push_back(shifted_vertices[old_idx[m]]);
+                            vertex_map[old_idx[m]] = idx;
+                            new_idx[m] = idx;
                             }
-                        extra_triangles.push_back(make_uint3(new_idx[0], new_idx[1], new_idx[2]));
+                        else
+                            {
+                            new_idx[m] = entry->second;
+                            }
                         }
+                    extra_triangles.push_back(make_uint3(new_idx[0], new_idx[1], new_idx[2]));
                     }
                 }
             }
         }
+
     m_num_total_vertices = m_num_vertices + static_cast<unsigned int>(extra_vertices.size());
     m_num_total_triangles = m_num_triangles + static_cast<unsigned int>(extra_triangles.size());
 
@@ -182,22 +191,19 @@ void TriangulatedGeometry::unwrapTriangles()
     // append extra unwrapped to original
     if (extra_vertices.size() > 0)
         {
-        ArrayHandle<Scalar3> h_vertices(m_vertices, access_location::host, access_mode::overwrite);
         for (unsigned int vi = 0; vi < extra_vertices.size(); ++vi)
             {
-            h_vertices.data[vi + m_num_vertices] = extra_vertices[vi];
+            vertices.push_back(extra_vertices[vi]);
             }
         }
 
     if (extra_triangles.size() > 0)
         {
-        ArrayHandle<uint3> h_triangles(m_triangles, access_location::host, access_mode::overwrite);
         for (unsigned int ti = 0; ti < extra_triangles.size(); ++ti)
             {
             const uint3 tri = extra_triangles[ti];
-            h_triangles.data[m_num_triangles + ti] = make_uint3(tri.x + m_num_vertices,
-                                                                tri.y + m_num_vertices,
-                                                                tri.z + m_num_vertices);
+            triangles.push_back(
+                make_uint3(tri.x + m_num_vertices, tri.y + m_num_vertices, tri.z + m_num_vertices));
             }
         }
     }
@@ -207,7 +213,7 @@ void TriangulatedGeometry::buildTriangleAABBs()
     m_triangle_aabbs.clear();
     m_triangle_aabbs.resize(m_num_total_triangles);
 
-    ArrayHandle<Scalar3> h_vertices(m_vertices, access_location::host, access_mode::read);
+    ArrayHandle<ShortReal3> h_vertices(m_vertices, access_location::host, access_mode::read);
     ArrayHandle<uint3> h_triangles(m_triangles, access_location::host, access_mode::read);
 
     // build AABB for all triangles including unwrapped triangles
@@ -215,9 +221,9 @@ void TriangulatedGeometry::buildTriangleAABBs()
         {
         const uint3 tri = h_triangles.data[ti];
 
-        const Scalar3 a = h_vertices.data[tri.x];
-        const Scalar3 b = h_vertices.data[tri.y];
-        const Scalar3 c = h_vertices.data[tri.z];
+        const ShortReal3 a = h_vertices.data[tri.x];
+        const ShortReal3 b = h_vertices.data[tri.y];
+        const ShortReal3 c = h_vertices.data[tri.z];
 
         const Scalar3 lower = make_scalar3(std::min(a.x, std::min(b.x, c.x)),
                                            std::min(a.y, std::min(b.y, c.y)),

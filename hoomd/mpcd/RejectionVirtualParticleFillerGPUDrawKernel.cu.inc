@@ -3,7 +3,7 @@
 
 /*!
  * \file mpcd/RejectionVirtualParticleFiller@_geometry@GPU.cu
- * \brief Template instantation for RejectionVirtualParticleFillerGPU driver (and so kernel)
+ * \brief Template instantiation for RejectionVirtualParticleFillerGPU driver (and so kernel)
  * with @_geometry@.
  *
  * The geometry class is filled in by CMake using configure_file(). See
@@ -23,7 +23,9 @@ namespace mpcd
     {
 namespace gpu
     {
-//! Template instantiation of slit geometry streaming
+//! Template instantiation of rejection filler
+template cudaError_t __attribute__((visibility("default")))
+classify_cells<GEOMETRY_CLASS>(const classify_cells_args_t& args, const GEOMETRY_CLASS& geom);
 template cudaError_t __attribute__((visibility("default")))
 draw_virtual_particles<GEOMETRY_CLASS>(const draw_virtual_particles_args_t& args,
                                        const GEOMETRY_CLASS& geom);

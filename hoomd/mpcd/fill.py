@@ -18,7 +18,7 @@ conditions do not appear to be properly enforced.
 import hoomd
 from hoomd.data.parameterdicts import ParameterDict
 from hoomd.mpcd import _mpcd
-from hoomd.mpcd.geometry import Geometry, ParallelPlates
+from hoomd.mpcd.geometry import Geometry, TriangulatedGeometry
 from hoomd.operation import Operation
 import inspect
 
@@ -129,17 +129,17 @@ class GeometryFiller(VirtualParticleFiller):
         density (float): Particle number density.
         kT (hoomd.variant.variant_like): Temperature of particles.
         geometry (hoomd.mpcd.geometry.Geometry): Surface to fill around.
+        num_classify_trials (int): Trial points drawn per collision cell when
+            determining which cells need to be filled, or `None` to determine
+            it from `density`.
 
     Virtual particles are inserted in cells whose volume is sliced by the
     specified `geometry`. The algorithm for doing the filling depends on the
     specific `geometry`.
 
-    .. rubric:: Limitations:
-
-    This filler **does not** currently support triclinic boxes for any
-    :class:`~hoomd.mpcd.geometry.Geometry`. Additionally, this filler does not
-    support the :class:`~hoomd.mpcd.geometry.PlanarPore` geometry for any
-    non-cubic cell shape. Exceptions will be raised in these cases.
+    Those fillers first determine which collision cells can possibly contain
+    both fluid and solid, then draw virtual particles only in those cells.
+    The classification is performed once and repeated only if the box changes.
 
     .. rubric:: Example:
 
@@ -160,6 +160,13 @@ class GeometryFiller(VirtualParticleFiller):
     Attributes:
         geometry (hoomd.mpcd.geometry.Geometry): Surface to fill around
             (*read only*).
+
+        num_classify_trials (int): Trial points drawn per collision cell when
+            determining which cells need to be filled (*read only*).
+
+            If `None`, the number is chosen as the mean number of solvent particles
+            in the classification region plus eight standard deviations.
+
     """
 
     __doc__ = inspect.cleandoc(__doc__).replace(
@@ -167,7 +174,7 @@ class GeometryFiller(VirtualParticleFiller):
     )
     _cpp_class_map = {}
 
-    def __init__(self, type, density, kT, geometry):
+    def __init__(self, type, density, kT, geometry, num_classify_trials=None):
         super().__init__(type, density, kT)
 
         param_dict = ParameterDict(
@@ -175,6 +182,14 @@ class GeometryFiller(VirtualParticleFiller):
         )
         param_dict["geometry"] = geometry
         self._param_dict.update(param_dict)
+        self._num_classify_trials = int(
+            num_classify_trials if num_classify_trials is not None else 0
+        )
+
+    @property
+    def num_classify_trials(self):
+        """int: Trial points drawn per collision cell during classification."""
+        return self._num_classify_trials
 
     def _attach_hook(self):
         sim = self._simulation
@@ -200,6 +215,7 @@ class GeometryFiller(VirtualParticleFiller):
             self.density,
             self.kT,
             self.geometry._cpp_obj,
+            self.num_classify_trials,
         )
 
         super()._attach_hook()
@@ -213,9 +229,103 @@ class GeometryFiller(VirtualParticleFiller):
         cls._cpp_class_map[geometry] = (module, cpp_class_name)
 
 
-GeometryFiller._register_cpp_class(ParallelPlates, _mpcd, "ParallelPlateGeometryFiller")
+class TriangulatedGeometryFiller(VirtualParticleFiller):
+    """Virtual-particle filler for a triangulated geometry.
+
+    Args:
+        type (str): Type of particles to fill.
+        density (float): Particle number density.
+        kT (hoomd.variant.variant_like): Temperature of particles.
+        geometry (hoomd.mpcd.geometry.TriangulatedGeometry): Surface to fill around.
+        num_classify_trials (int): Trial points drawn per collision cell when
+            determining which cells need to be filled, or `None` to determine
+            it from `density`.
+
+    Virtual particles are inserted in cells whose volume is sliced by the
+    triangulated mesh. The filler first determines which cells can contain both
+    fluid and solid and stores the triangles near each of them, then draws
+    virtual particles only in those cells. A drawn particle is kept if it lies
+    on the side of the nearest triangle that its normal points to, so the
+    triangles must be wound so that their normals point out of the fluid. The
+    classification is performed once and repeated only if the box changes.
+
+    .. rubric:: Example:
+
+    Filler for triangulated plate geometry.
+
+    .. code-block:: python
+
+        vertices = numpy.array(
+            [[-5, 2.5, -5], [-5, 2.5, 5], [5, 2.5, -5], [5, 2.5, 5]]
+        )
+        triangles = numpy.array([[0, 1, 3], [0, 3, 2]])
+        plate = hoomd.mpcd.geometry.TriangulatedGeometry(
+            simulation, vertices, triangles, unwrap_distance=0.0
+        )
+        filler = hoomd.mpcd.fill.TriangulatedGeometryFiller(
+            type="A", density=5.0, kT=1.0, geometry=plate
+        )
+        simulation.operations.integrator.virtual_particle_fillers = [filler]
+
+    {inherited}
+
+    **Members defined in** `TriangulatedGeometryFiller`:
+
+    Attributes:
+        geometry (hoomd.mpcd.geometry.TriangulatedGeometry): Surface to fill around
+            (*read only*).
+
+        num_classify_trials (int): Trial points drawn per collision cell when
+            determining which cells need to be filled (*read only*).
+
+            If `None`, the number is chosen as the mean number of solvent particles
+            in the classification region plus eight standard deviations.
+
+    """
+
+    __doc__ = inspect.cleandoc(__doc__).replace(
+        "{inherited}", inspect.cleandoc(VirtualParticleFiller._doc_inherited)
+    )
+
+    def __init__(self, type, density, kT, geometry, num_classify_trials=None):
+        super().__init__(type, density, kT)
+
+        if not isinstance(geometry, TriangulatedGeometry):
+            raise TypeError("Geometry must be a TriangulatedGeometry")
+
+        self._geometry = geometry
+        self._num_classify_trials = int(
+            num_classify_trials if num_classify_trials is not None else 0
+        )
+
+    @property
+    def geometry(self):
+        """hoomd.mpcd.geometry.TriangulatedGeometry: Surface to fill around."""
+        return self._geometry
+
+    @property
+    def num_classify_trials(self):
+        """int: Trial points drawn per collision cell during classification."""
+        return self._num_classify_trials
+
+    def _attach_hook(self):
+        sim = self._simulation
+        sim._warn_if_seed_unset()
+
+        self._cpp_obj = _mpcd.TriangulatedGeometryFiller(
+            sim.state._cpp_sys_def,
+            self.type,
+            self.density,
+            self.kT,
+            self.geometry._cpp_obj,
+            self.num_classify_trials,
+        )
+
+        super()._attach_hook()
+
 
 __all__ = [
     "GeometryFiller",
+    "TriangulatedGeometryFiller",
     "VirtualParticleFiller",
 ]

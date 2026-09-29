@@ -2,139 +2,47 @@
 // Part of HOOMD-blue, released under the BSD 3-Clause License.
 
 /*!
- * \file mpcd/RejectionVirtualParticleFiller.h
- * \brief Declaration and definition of RejectionVirtualParticleFiller
+ * \file mpcd/TriangulatedGeometryFiller.cc
+ * \brief Definition of TriangulatedGeometryFiller
  */
 
-#ifndef MPCD_REJECTION_VIRTUAL_PARTICLE_FILLER_H_
-#define MPCD_REJECTION_VIRTUAL_PARTICLE_FILLER_H_
-
-#ifdef __HIPCC__
-#error This header cannot be compiled by nvcc
-#endif
-
-#include "VirtualParticleFiller.h"
-#include "WrappedCellIndex.h"
-
+#include "TriangulatedGeometryFiller.h"
 #include "hoomd/RNGIdentifiers.h"
 #include "hoomd/RandomNumbers.h"
-
-#include <pybind11/pybind11.h>
 
 namespace hoomd
     {
 namespace mpcd
     {
-
-//! Adds virtual particles to MPCD particle data for a given geometry.
-/*!
- * Here we implement a virtual particle filler using rejection sampling method. The filler first
- * identifies the collision cells that are cut by the boundary, i.e., the cells that can contain
- * both fluid and solid, and then only draws particles in those cells.
- *
- * To identify these cells, a number of trial points are drawn per cell in a region that covers
- * every position the cell can occupy under grid shifting. If all trial points lie inside the
- * geometry, the cell is pure fluid and needs no virtual particles. If all lie outside, the cell
- * is entirely solid and can never share a collision cell with fluid particles. Only the cells
- * with trial points on both sides of the boundary are filled. This classification is done once
- * and recomputed only when the simulation box changes.
- *
- * During filling, the number of particles drawn in each cell is Poisson distributed with mean equal
- * to the fill density times the cell volume. Each drawn particle is kept only if it lies outside
- * the confinement defined by the template geometry.
- */
-template<class Geometry>
-class PYBIND11_EXPORT RejectionVirtualParticleFiller : public mpcd::VirtualParticleFiller
+TriangulatedGeometryFiller::TriangulatedGeometryFiller(
+    std::shared_ptr<SystemDefinition> sysdef,
+    const std::string& type,
+    Scalar density,
+    std::shared_ptr<Variant> T,
+    std::shared_ptr<const TriangulatedGeometry> geom,
+    unsigned int num_classify_trials)
+    : mpcd::VirtualParticleFiller(sysdef, type, density, T), m_geom(geom), m_tmp_pos(m_exec_conf),
+      m_tmp_vel(m_exec_conf), m_num_classify_trials(num_classify_trials), m_fill_cells(m_exec_conf),
+      m_num_fill_cells(0), m_need_classify(true), m_alloc_per_cell(0), m_tri_list(m_exec_conf),
+      m_num_tri_per_cell(m_exec_conf), m_max_tri_per_cell(0)
     {
-    public:
-    //! Constructor
-    RejectionVirtualParticleFiller(std::shared_ptr<SystemDefinition> sysdef,
-                                   const std::string& type,
-                                   Scalar density,
-                                   std::shared_ptr<Variant> T,
-                                   std::shared_ptr<const Geometry> geom,
-                                   unsigned int num_classify_trials)
-        : mpcd::VirtualParticleFiller(sysdef, type, density, T), m_geom(geom),
-          m_tmp_pos(m_exec_conf), m_tmp_vel(m_exec_conf),
-          m_num_classify_trials(num_classify_trials), m_fill_cells(m_exec_conf),
-          m_num_fill_cells(0), m_need_classify(true), m_alloc_per_cell(0)
-        {
-        m_exec_conf->msg->notice(5)
-            << "Constructing MPCD RejectionVirtualParticleFiller : " + Geometry::getName()
-            << std::endl;
+    m_exec_conf->msg->notice(5) << "Constructing MPCD TriangulatedGeometryFiller" << std::endl;
 
-        m_pdata->getBoxChangeSignal()
-            .connect<mpcd::RejectionVirtualParticleFiller<Geometry>,
-                     &mpcd::RejectionVirtualParticleFiller<Geometry>::setNeedClassify>(this);
-        }
+    m_pdata->getBoxChangeSignal()
+        .connect<mpcd::TriangulatedGeometryFiller,
+                 &mpcd::TriangulatedGeometryFiller::setNeedClassify>(this);
+    }
 
-    //! Destructor
-    virtual ~RejectionVirtualParticleFiller()
-        {
-        m_exec_conf->msg->notice(5)
-            << "Destroying MPCD RejectionVirtualParticleFiller" << std::endl;
+TriangulatedGeometryFiller::~TriangulatedGeometryFiller()
+    {
+    m_exec_conf->msg->notice(5) << "Destroying MPCD TriangulatedGeometryFiller" << std::endl;
 
-        m_pdata->getBoxChangeSignal()
-            .disconnect<mpcd::RejectionVirtualParticleFiller<Geometry>,
-                        &mpcd::RejectionVirtualParticleFiller<Geometry>::setNeedClassify>(this);
-        }
+    m_pdata->getBoxChangeSignal()
+        .disconnect<mpcd::TriangulatedGeometryFiller,
+                    &mpcd::TriangulatedGeometryFiller::setNeedClassify>(this);
+    }
 
-    //! Get the streaming geometry
-    std::shared_ptr<const Geometry> getGeometry() const
-        {
-        return m_geom;
-        }
-
-    //! Set the streaming geometry
-    void setGeometry(std::shared_ptr<const Geometry> geom)
-        {
-        m_geom = geom;
-        m_need_classify = true;
-        }
-
-    //! Get the number of trial points used per cell during classification
-    unsigned int getNumClassifyTrials() const
-        {
-        return m_num_classify_trials;
-        }
-
-    //! Get the number of cells that are filled
-    unsigned int getNumFillCells() const
-        {
-        return m_num_fill_cells;
-        }
-
-    //! Get the list of cells that are filled
-    const GPUArray<unsigned int>& getFillCells() const
-        {
-        return m_fill_cells;
-        }
-
-    //! Fill the particles outside the confinement
-    void fill(uint64_t timestep) override;
-
-    protected:
-    std::shared_ptr<const Geometry> m_geom;
-    GPUArray<Scalar4> m_tmp_pos;
-    GPUArray<Scalar4> m_tmp_vel;
-
-    unsigned int m_num_classify_trials;  //!< Trial points per cell during classification
-    GPUArray<unsigned int> m_fill_cells; //!< Local 1D indices of the cells that need filling
-    unsigned int m_num_fill_cells;       //!< Number of cells that need filling
-    bool m_need_classify;                //!< True if the cell classification is out of date
-    unsigned int m_alloc_per_cell;       //!< Per-cell capacity of the temporary arrays
-
-    //! Flag the cell classification as out of date
-    void setNeedClassify()
-        {
-        m_need_classify = true;
-        }
-
-    //! Determine which cells need virtual particles
-    virtual void classifyCells();
-    };
-
-template<class Geometry> void RejectionVirtualParticleFiller<Geometry>::classifyCells()
+void TriangulatedGeometryFiller::classifyCells()
     {
     // size the cell list against the current box before reading its dimensions
     m_cl->computeDimensions();
@@ -172,19 +80,30 @@ template<class Geometry> void RejectionVirtualParticleFiller<Geometry>::classify
                                         Scalar(0.5) * draw_box.getL().y,
                                         Scalar(0.5) * draw_box.getL().z);
 
-    const Scalar mean_per_cell = m_density * draw_box.getVolume();
-
     // when not set by the user, use the mean number of solvent particles in the sampling region
     // plus eight standard deviations of the Poisson distribution
+    const Scalar mean_in_region = m_density * draw_box.getVolume();
     const unsigned int num_classify_trials
         = (m_num_classify_trials > 0)
               ? m_num_classify_trials
               : static_cast<unsigned int>(
-                    std::ceil(mean_per_cell + Scalar(8.0) * std::sqrt(mean_per_cell)));
+                    std::ceil(mean_in_region + Scalar(8.0) * std::sqrt(mean_in_region)));
 
     uint16_t seed = m_sysdef->getSeed();
 
+    const hoomd::detail::AABBTree& tree = m_geom->getTriangleTree();
+    ArrayHandle<ShortReal3> h_verts(m_geom->getVertices(),
+                                    access_location::host,
+                                    access_mode::read);
+    ArrayHandle<uint3> h_tris(m_geom->getTriangles(), access_location::host, access_mode::read);
+
+    // mark the cells that are cut by the mesh, record their candidate triangles, and track the
+    // largest count so that the lists can be stored in a uniform per-cell allocation
     std::vector<unsigned int> marked;
+    std::vector<unsigned int> counts;
+    std::vector<unsigned int> candidates;
+    std::vector<unsigned int> tri_indices;
+    unsigned int max_tri_per_cell = 0;
     for (unsigned int k = 0; k < local_dim.z; ++k)
         {
         for (unsigned int j = 0; j < local_dim.y; ++j)
@@ -194,6 +113,18 @@ template<class Geometry> void RejectionVirtualParticleFiller<Geometry>::classify
                 const int gi = static_cast<int>(i) + origin.x;
                 const int gj = static_cast<int>(j) + origin.y;
                 const int gk = static_cast<int>(k) + origin.z;
+
+                const hoomd::detail::AABB aabb
+                    = computeSweptCellAABB(gi, gj, gk, inv_dim, max_shift, global_box);
+                candidates.clear();
+                tree.query(candidates, aabb);
+
+                // skip cells that no triangles can reach under grid shifting
+                if (candidates.empty())
+                    {
+                    continue;
+                    }
+                const unsigned int num_candidates = static_cast<unsigned int>(candidates.size());
 
                 // cell center in Cartesian coordinates
                 const Scalar3 f_center = make_scalar3((gi + Scalar(0.5)) * inv_dim.x,
@@ -208,6 +139,7 @@ template<class Geometry> void RejectionVirtualParticleFiller<Geometry>::classify
                 // 0 until the first usable trial point, then -1 if only inside points have been
                 // seen so far and +1 if only outside points have been seen
                 int code = 0;
+                bool is_cut = false;
                 for (unsigned int n = 0; n < num_classify_trials; ++n)
                     {
                     Scalar3 point = make_scalar3(
@@ -229,7 +161,11 @@ template<class Geometry> void RejectionVirtualParticleFiller<Geometry>::classify
                         continue;
                         }
 
-                    const bool is_outside = m_geom->isOutside(point);
+                    const bool is_outside = isOutside(point,
+                                                      candidates.data(),
+                                                      num_candidates,
+                                                      h_verts.data,
+                                                      h_tris.data);
 
                     if (code == 0)
                         {
@@ -241,36 +177,72 @@ template<class Geometry> void RejectionVirtualParticleFiller<Geometry>::classify
                     // contradicts the ones before it
                     if ((code == -1 && is_outside) || (code == 1 && !is_outside))
                         {
-                        marked.push_back(ci(i, j, k));
+                        is_cut = true;
                         break;
                         }
+                    }
+
+                if (is_cut)
+                    {
+                    marked.push_back(ci(i, j, k));
+                    counts.push_back(num_candidates);
+                    tri_indices.insert(tri_indices.end(), candidates.begin(), candidates.end());
+                    max_tri_per_cell = std::max(max_tri_per_cell, num_candidates);
                     }
                 }
             }
         }
 
+    // allocate the uniform per-cell storage now that the largest count is known
     m_num_fill_cells = static_cast<unsigned int>(marked.size());
+    m_max_tri_per_cell = max_tri_per_cell;
     if (m_num_fill_cells > m_fill_cells.getNumElements())
         {
         GPUArray<unsigned int> fill_cells(m_num_fill_cells, m_exec_conf);
         m_fill_cells.swap(fill_cells);
+        GPUArray<unsigned int> num_tri_per_cell(m_num_fill_cells, m_exec_conf);
+        m_num_tri_per_cell.swap(num_tri_per_cell);
+        }
+    const unsigned int num_tri_max = m_num_fill_cells * m_max_tri_per_cell;
+    if (num_tri_max > m_tri_list.getNumElements())
+        {
+        GPUArray<unsigned int> tri_list(num_tri_max, m_exec_conf);
+        m_tri_list.swap(tri_list);
         }
 
+    // store the candidate list of each fill cell in its own block of m_max_tri_per_cell entries
     if (m_num_fill_cells > 0)
         {
         ArrayHandle<unsigned int> h_fill_cells(m_fill_cells,
                                                access_location::host,
                                                access_mode::overwrite);
+        ArrayHandle<unsigned int> h_num_tri_per_cell(m_num_tri_per_cell,
+                                                     access_location::host,
+                                                     access_mode::overwrite);
+        ArrayHandle<unsigned int> h_tri_list(m_tri_list,
+                                             access_location::host,
+                                             access_mode::overwrite);
+
         std::copy(marked.begin(), marked.end(), h_fill_cells.data);
+        std::copy(counts.begin(), counts.end(), h_num_tri_per_cell.data);
+
+        unsigned int offset = 0;
+        for (unsigned int n = 0; n < m_num_fill_cells; ++n)
+            {
+            std::copy(tri_indices.begin() + offset,
+                      tri_indices.begin() + offset + counts[n],
+                      h_tri_list.data + n * m_max_tri_per_cell);
+            offset += counts[n];
+            }
         }
 
-    m_exec_conf->msg->notice(6) << "MPCD RejectionVirtualParticleFiller: filling "
-                                << m_num_fill_cells << " of "
-                                << (local_dim.x * local_dim.y * local_dim.z) << " cells"
+    m_exec_conf->msg->notice(6) << "MPCD TriangulatedGeometryFiller: filling " << m_num_fill_cells
+                                << " of " << (local_dim.x * local_dim.y * local_dim.z)
+                                << " cells, at most " << m_max_tri_per_cell << " triangles per cell"
                                 << std::endl;
     }
 
-template<class Geometry> void RejectionVirtualParticleFiller<Geometry>::fill(uint64_t timestep)
+void TriangulatedGeometryFiller::fill(uint64_t timestep)
     {
     // size the cell list against the current box before reading its dimensions
     m_cl->computeDimensions();
@@ -308,7 +280,7 @@ template<class Geometry> void RejectionVirtualParticleFiller<Geometry>::fill(uin
 
     // the number of particles drawn per cell is Poisson distributed with mean equal to the fill
     // density times the cell volume, which is the same for every cell even in a triclinic box
-    // because shear preserves volume.
+    // because shear preserves volume
     const Scalar cell_volume
         = global_box.getVolume() / (global_dim.x * global_dim.y * global_dim.z);
     const Scalar mean_per_cell = m_density * cell_volume;
@@ -320,6 +292,9 @@ template<class Geometry> void RejectionVirtualParticleFiller<Geometry>::fill(uin
         m_alloc_per_cell = static_cast<unsigned int>(
             std::ceil(mean_per_cell + Scalar(8.0) * std::sqrt(mean_per_cell)));
         }
+
+    uint16_t seed = m_sysdef->getSeed();
+    const Scalar vel_factor = fast::sqrt((*m_T)(timestep) / m_mpcd_pdata->getMass());
 
     unsigned int num_selected = 0;
     unsigned int max_observed = m_alloc_per_cell;
@@ -340,13 +315,19 @@ template<class Geometry> void RejectionVirtualParticleFiller<Geometry>::fill(uin
 
         // Step 2: Draw the particles and assign velocities simultaneously by using temporary
         // memory. Only keep the ones that are outside the geometry.
-        uint16_t seed = m_sysdef->getSeed();
-        const Scalar vel_factor = fast::sqrt((*m_T)(timestep) / m_mpcd_pdata->getMass());
         ArrayHandle<Scalar4> h_tmp_pos(m_tmp_pos, access_location::host, access_mode::overwrite);
         ArrayHandle<Scalar4> h_tmp_vel(m_tmp_vel, access_location::host, access_mode::overwrite);
         ArrayHandle<unsigned int> h_fill_cells(m_fill_cells,
                                                access_location::host,
                                                access_mode::read);
+        ArrayHandle<unsigned int> h_num_tri_per_cell(m_num_tri_per_cell,
+                                                     access_location::host,
+                                                     access_mode::read);
+        ArrayHandle<unsigned int> h_tri_list(m_tri_list, access_location::host, access_mode::read);
+        ArrayHandle<ShortReal3> h_verts(m_geom->getVertices(),
+                                        access_location::host,
+                                        access_mode::read);
+        ArrayHandle<uint3> h_tris(m_geom->getTriangles(), access_location::host, access_mode::read);
 
         num_selected = 0;
         for (unsigned int n = 0; n < m_num_fill_cells; ++n)
@@ -357,17 +338,20 @@ template<class Geometry> void RejectionVirtualParticleFiller<Geometry>::fill(uin
             const int gj = static_cast<int>(cell_ijk.y) + origin.y;
             const int gk = static_cast<int>(cell_ijk.z) + origin.z;
 
-            // cell center in Cartesian coordinates
-            Scalar3 f_center = make_scalar3((gi + Scalar(0.5)) * inv_dim.x,
-                                            (gj + Scalar(0.5)) * inv_dim.y,
-                                            (gk + Scalar(0.5)) * inv_dim.z);
+            const Scalar3 f_center = make_scalar3((gi + Scalar(0.5)) * inv_dim.x,
+                                                  (gj + Scalar(0.5)) * inv_dim.y,
+                                                  (gk + Scalar(0.5)) * inv_dim.z);
             const Scalar3 cell_center = global_box.makeCoordinates(f_center);
+
+            // candidate triangles stored for this cell during classification
+            const unsigned int* cell_tris = h_tri_list.data + n * m_max_tri_per_cell;
+            const unsigned int num_cell_tris = h_num_tri_per_cell.data[n];
 
             hoomd::RandomGenerator rng(
                 hoomd::Seed(hoomd::RNGIdentifier::VirtualParticleFiller, timestep, seed),
                 hoomd::Counter(wrappedCellIndex(gi, gj, gk, global_dim), m_filler_id, 1));
 
-            unsigned int num_in_cell = hoomd::PoissonDistribution<Scalar>(mean_per_cell)(rng);
+            const unsigned int num_in_cell = hoomd::PoissonDistribution<Scalar>(mean_per_cell)(rng);
             max_observed = std::max(max_observed, num_in_cell);
 
             // once any cell has drawn more than the capacity, the whole fill is redone with
@@ -385,7 +369,7 @@ template<class Geometry> void RejectionVirtualParticleFiller<Geometry>::fill(uin
                 draw_box.wrap(particle, img);
                 particle += cell_center;
 
-                if (m_geom->isOutside(particle))
+                if (isOutside(particle, cell_tris, num_cell_tris, h_verts.data, h_tris.data))
                     {
                     h_tmp_pos.data[num_selected]
                         = make_scalar4(particle.x, particle.y, particle.z, __int_as_scalar(m_type));
@@ -394,7 +378,6 @@ template<class Geometry> void RejectionVirtualParticleFiller<Geometry>::fill(uin
                     Scalar3 vel;
                     gen(vel.x, vel.y, rng);
                     vel.z = gen(rng);
-                    m_geom->addToVirtualParticleVelocity(vel, particle);
                     h_tmp_vel.data[num_selected]
                         = make_scalar4(vel.x, vel.y, vel.z, __int_as_scalar(mpcd::detail::NO_CELL));
                     ++num_selected;
@@ -429,27 +412,23 @@ template<class Geometry> void RejectionVirtualParticleFiller<Geometry>::fill(uin
 
 namespace detail
     {
-//! Export RejectionVirtualParticleFiller to python
-template<class Geometry> void export_RejectionVirtualParticleFiller(pybind11::module& m)
+void export_TriangulatedGeometryFiller(pybind11::module& m)
     {
-    namespace py = pybind11;
-    const std::string name = Geometry::getName() + "GeometryFiller";
-    py::class_<mpcd::RejectionVirtualParticleFiller<Geometry>,
-               mpcd::VirtualParticleFiller,
-               std::shared_ptr<mpcd::RejectionVirtualParticleFiller<Geometry>>>(m, name.c_str())
+    pybind11::class_<mpcd::TriangulatedGeometryFiller,
+                     mpcd::VirtualParticleFiller,
+                     std::shared_ptr<mpcd::TriangulatedGeometryFiller>>(
+        m,
+        "TriangulatedGeometryFiller")
         .def(pybind11::init<std::shared_ptr<SystemDefinition>,
                             const std::string&,
                             Scalar,
                             std::shared_ptr<Variant>,
-                            std::shared_ptr<const Geometry>,
+                            std::shared_ptr<const TriangulatedGeometry>,
                             unsigned int>())
-        .def_property_readonly("geometry",
-                               &mpcd::RejectionVirtualParticleFiller<Geometry>::getGeometry)
-        .def_property_readonly(
-            "num_classify_trials",
-            &mpcd::RejectionVirtualParticleFiller<Geometry>::getNumClassifyTrials);
+        .def_property_readonly("geometry", &mpcd::TriangulatedGeometryFiller::getGeometry)
+        .def_property_readonly("num_classify_trials",
+                               &mpcd::TriangulatedGeometryFiller::getNumClassifyTrials);
     }
     } // end namespace detail
     } // end namespace mpcd
     } // end namespace hoomd
-#endif // MPCD_REJECTION_VIRTUAL_PARTICLE_FILLER_H_

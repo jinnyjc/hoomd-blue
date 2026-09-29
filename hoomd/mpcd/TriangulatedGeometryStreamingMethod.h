@@ -1,4 +1,4 @@
-// Copyright (c) 2009-2025 The Regents of the University of Michigan.
+// Copyright (c) 2009-2026 The Regents of the University of Michigan.
 // Part of HOOMD-blue, released under the BSD 3-Clause License.
 
 /*!
@@ -271,9 +271,9 @@ template<class Force> void TriangulatedGeometryStreamingMethod<Force>::stream(ui
     ArrayHandle<Scalar4> h_vel(m_mpcd_pdata->getVelocities(),
                                access_location::host,
                                access_mode::readwrite);
-    ArrayHandle<Scalar3> h_vertices(m_geom->getVertices(),
-                                    access_location::host,
-                                    access_mode::read);
+    ArrayHandle<ShortReal3> h_vertices(m_geom->getVertices(),
+                                       access_location::host,
+                                       access_mode::read);
     ArrayHandle<uint3> h_triangles(m_geom->getTriangles(),
                                    access_location::host,
                                    access_mode::read);
@@ -321,13 +321,17 @@ template<class Force> void TriangulatedGeometryStreamingMethod<Force>::stream(ui
                 {
                 const uint3 triangles = h_triangles.data[cur_tri];
 
-                const Scalar3 a(h_vertices.data[triangles.x]);
-                const Scalar3 b(h_vertices.data[triangles.y]);
-                const Scalar3 c(h_vertices.data[triangles.z]);
+                const ShortReal3 a = h_vertices.data[triangles.x];
+                const ShortReal3 b = h_vertices.data[triangles.y];
+                const ShortReal3 c = h_vertices.data[triangles.z];
+
+                const Scalar3 aa = make_scalar3(a.x, a.y, a.z);
+                const Scalar3 bb = make_scalar3(b.x, b.y, b.z);
+                const Scalar3 cc = make_scalar3(c.x, c.y, c.z);
 
                 // calculate normal vector of triangle
-                const Scalar3 e1 = b - a;
-                const Scalar3 e2 = c - a;
+                const Scalar3 e1 = bb - aa;
+                const Scalar3 e2 = cc - aa;
                 const Scalar3 n = cross(e1, e2);
 
                 // exclude particles moving away from the triangle
@@ -336,7 +340,7 @@ template<class Force> void TriangulatedGeometryStreamingMethod<Force>::stream(ui
 
                 // narrow search: exact ray-triangle intersection
                 Scalar t_hit;
-                if (!intersectTriangle(pos_v, vel_v, a, b, c, dt_remain, eps, t_hit))
+                if (!intersectTriangle(pos_v, vel_v, aa, bb, cc, dt_remain, eps, t_hit))
                     continue;
 
                 if (t_hit >= best_t)
@@ -352,13 +356,17 @@ template<class Force> void TriangulatedGeometryStreamingMethod<Force>::stream(ui
                 // retrieve the triangle that produces earliest hit
                 const uint3 triangle = h_triangles.data[best_tri];
 
-                const Scalar3 a(h_vertices.data[triangle.x]);
-                const Scalar3 b(h_vertices.data[triangle.y]);
-                const Scalar3 c(h_vertices.data[triangle.z]);
+                const ShortReal3 a = h_vertices.data[triangle.x];
+                const ShortReal3 b = h_vertices.data[triangle.y];
+                const ShortReal3 c = h_vertices.data[triangle.z];
+
+                const Scalar3 aa = make_scalar3(a.x, a.y, a.z);
+                const Scalar3 bb = make_scalar3(b.x, b.y, b.z);
+                const Scalar3 cc = make_scalar3(c.x, c.y, c.z);
 
                 // compute triangle normal
-                const Scalar3 e1 = b - a;
-                const Scalar3 e2 = c - a;
+                const Scalar3 e1 = bb - aa;
+                const Scalar3 e2 = cc - aa;
                 const Scalar3 n = cross(e1, e2);
                 const Scalar nn = dot(n, n);
 
