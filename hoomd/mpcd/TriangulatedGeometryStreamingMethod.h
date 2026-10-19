@@ -24,36 +24,33 @@ namespace mpcd
 //! Ray-triangle intersection
 /*!
  * This method computes the intersection between a particle trajectory and a triangle. The particle
- * trajectory is treated as a ray starting at \a pos with direction \a vel over the remaining
+ * trajectory is treated as a ray starting at \a pos with velocity \a vel over the remaining
  * timestep \a dt_remain. If an intersection occurs within this interval, the hit time is returned
- * in
- * \a t_hit. This implementation follows the watertight ray-triangle intersection algorithm
+ * in \a t_hit. This implementation follows the watertight ray-triangle intersection algorithm
  * described in: Woop, S., Benthin, C., Wald, I. (2013). Watertight Ray/Triangle Intersection.
  *
- * \param pos_v Particle position
- * \param vel_v Particle direction
+ * \param pos Particle position
+ * \param vel Particle velocity
  * \param a, b, c Triangle vertices
  * \param dt_remain Remaining timestep
  * \param eps Numerical tolerance
  * \param t_hit Time of intersection
  *
- * This returns True if intersection occurs within dt_remain, false otherwise.
- *
+ * This returns True if intersection occurs within \a dt_remain, false otherwise.
  */
-inline bool intersectTriangle(const Scalar3& pos_v,
-                              const Scalar3& vel_v,
+inline bool intersectTriangle(const Scalar3& pos,
+                              const Scalar3& vel,
                               const Scalar3& a,
                               const Scalar3& b,
                               const Scalar3& c,
                               const Scalar dt_remain,
                               const Scalar eps,
                               Scalar& t_hit)
-
     {
     // calculate dimension where the ray direction is maximal
-    const Scalar ax = std::fabs(vel_v.x);
-    const Scalar ay = std::fabs(vel_v.y);
-    const Scalar az = std::fabs(vel_v.z);
+    const Scalar ax = std::fabs(vel.x);
+    const Scalar ay = std::fabs(vel.y);
+    const Scalar az = std::fabs(vel.z);
 
     int kz = 0;
     if (ay >= ax && ay >= az)
@@ -67,7 +64,7 @@ inline bool intersectTriangle(const Scalar3& pos_v,
     if (ky == 3)
         ky = 0;
 
-    const Scalar vel_comp[3] = {vel_v.x, vel_v.y, vel_v.z};
+    const Scalar vel_comp[3] = {vel.x, vel.y, vel.z};
     const Scalar det = vel_comp[kz];
     if (std::fabs(det) <= eps)
         return false;
@@ -81,9 +78,9 @@ inline bool intersectTriangle(const Scalar3& pos_v,
     const Scalar Sz = Scalar(1.0) / det;
 
     // calculate vertices relative to ray origin
-    const Scalar3 A = a - pos_v;
-    const Scalar3 B = b - pos_v;
-    const Scalar3 C = c - pos_v;
+    const Scalar3 A = a - pos;
+    const Scalar3 B = b - pos;
+    const Scalar3 C = c - pos;
 
     const Scalar A_comp[3] = {A.x, A.y, A.z};
     const Scalar B_comp[3] = {B.x, B.y, B.z};
@@ -145,7 +142,7 @@ inline bool intersectTriangle(const Scalar3& pos_v,
  * \a pos to \a pos + vel * dt.
  *
  * \param pos Particle position
- * \param vel Particle direction
+ * \param vel Particle velocity
  * \param dt Remaining timestep
  */
 inline hoomd::detail::AABB makePathAABB(const Scalar3& pos, const Scalar3& vel, const Scalar dt)
@@ -167,14 +164,12 @@ inline hoomd::detail::AABB makePathAABB(const Scalar3& pos, const Scalar3& vel, 
  * This method implements the base version of ballistic propagation of MPCD
  * particles in confined triangulated geometries.
  *
- * \tparam Geometry The confining triangulated geometry.
  * \tparam Force The solvent force.
  *
  * The integration scheme is essentially Verlet with specular reflections. The particle is streamed
- * forward over the time interval. If it moves outside the Geometry, it is placed back on the
+ * forward over the time interval. If it moves outside the geometry, it is placed back on the
  * boundary and its velocity is updated according to the boundary conditions. Streaming then
  * continues until the timestep is completed.
- *
  */
 template<class Force>
 class PYBIND11_EXPORT TriangulatedGeometryStreamingMethod : public mpcd::StreamingMethod
@@ -186,7 +181,7 @@ class PYBIND11_EXPORT TriangulatedGeometryStreamingMethod : public mpcd::Streami
      * \param cur_timestep Current system timestep
      * \param period Number of timesteps between collisions
      * \param phase Phase shift for periodic updates
-     * \param geom Streaming geometry
+     * \param geom Triangulated geometry
      * \param force Solvent force
      * \param max_bounce Maximum number of bounces per streaming step
      */
@@ -205,35 +200,37 @@ class PYBIND11_EXPORT TriangulatedGeometryStreamingMethod : public mpcd::Streami
     //! Implementation of the streaming rule
     void stream(uint64_t timestep) override;
 
-    //! Get triangulated geometry
+    //! Get the triangulated geometry
     std::shared_ptr<TriangulatedGeometry> getGeometry() const
         {
         return m_geom;
         }
 
-    //! Set triangulated geometry
+    //! Set the triangulated geometry
     void setGeometry(std::shared_ptr<TriangulatedGeometry> geom)
         {
         m_geom = geom;
         }
 
-    //! Set the solvent force
+    //! Get the solvent force
     std::shared_ptr<Force> getForce() const
         {
         return m_force;
         }
 
-    //! Get the solvent force
+    //! Set the solvent force
     void setForce(std::shared_ptr<Force> force)
         {
         m_force = force;
         }
 
+    //! Get the maximum number of bounces
     unsigned int getMaxBounce() const
         {
         return m_max_bounce;
         }
 
+    //! Set the maximum number of bounces
     void setMaxBounce(unsigned int max_bounce)
         {
         m_max_bounce = max_bounce;
@@ -282,9 +279,7 @@ template<class Force> void TriangulatedGeometryStreamingMethod<Force>::stream(ui
     // default construct a force if one is not set
     const Force force = (m_force) ? *m_force : Force();
 
-    // triangle candidates through candidates
-    std::vector<unsigned int> candidate_triangles;
-
+    std::vector<unsigned int> candidate_tris;
     for (unsigned int cur_p = 0; cur_p < m_mpcd_pdata->getN(); ++cur_p)
         {
         const Scalar4 postype = h_pos.data[cur_p];
@@ -300,9 +295,6 @@ template<class Force> void TriangulatedGeometryStreamingMethod<Force>::stream(ui
         Scalar dt_remain = m_mpcd_dt;
         bool collide = true;
         unsigned int bounce = 0;
-
-        Scalar3 pos_v(pos);
-        Scalar3 vel_v(vel);
         do
             {
             bool found = false;
@@ -310,20 +302,19 @@ template<class Force> void TriangulatedGeometryStreamingMethod<Force>::stream(ui
             // to keep the earliest hit
             Scalar best_t = dt_remain;
             unsigned int best_tri = 0;
-            const Scalar eps = Scalar(1e-12);
 
             // broad search: query candidate triangles overlapping the particle path AABB
-            candidate_triangles.clear();
-            const hoomd::detail::AABB path_aabb = makePathAABB(pos_v, vel_v, dt_remain);
-            m_geom->getTriangleTree().query(candidate_triangles, path_aabb);
+            candidate_tris.clear();
+            const hoomd::detail::AABB path_aabb = makePathAABB(pos, vel, dt_remain);
+            m_geom->getTriangleTree().query(candidate_tris, path_aabb);
 
-            for (const auto cur_tri : candidate_triangles)
+            for (const auto cur_tri : candidate_tris)
                 {
-                const uint3 triangles = h_triangles.data[cur_tri];
+                const uint3 tri = h_triangles.data[cur_tri];
 
-                const ShortReal3 a = h_vertices.data[triangles.x];
-                const ShortReal3 b = h_vertices.data[triangles.y];
-                const ShortReal3 c = h_vertices.data[triangles.z];
+                const ShortReal3 a = h_vertices.data[tri.x];
+                const ShortReal3 b = h_vertices.data[tri.y];
+                const ShortReal3 c = h_vertices.data[tri.z];
 
                 const Scalar3 aa = make_scalar3(a.x, a.y, a.z);
                 const Scalar3 bb = make_scalar3(b.x, b.y, b.z);
@@ -335,12 +326,12 @@ template<class Force> void TriangulatedGeometryStreamingMethod<Force>::stream(ui
                 const Scalar3 n = cross(e1, e2);
 
                 // exclude particles moving away from the triangle
-                if (dot(vel_v, n) <= Scalar(0))
+                if (dot(vel, n) <= Scalar(0.0))
                     continue;
 
                 // narrow search: exact ray-triangle intersection
                 Scalar t_hit;
-                if (!intersectTriangle(pos_v, vel_v, aa, bb, cc, dt_remain, eps, t_hit))
+                if (!intersectTriangle(pos, vel, aa, bb, cc, dt_remain, Scalar(1e-12), t_hit))
                     continue;
 
                 if (t_hit >= best_t)
@@ -354,11 +345,11 @@ template<class Force> void TriangulatedGeometryStreamingMethod<Force>::stream(ui
             if (found)
                 {
                 // retrieve the triangle that produces earliest hit
-                const uint3 triangle = h_triangles.data[best_tri];
+                const uint3 tri = h_triangles.data[best_tri];
 
-                const ShortReal3 a = h_vertices.data[triangle.x];
-                const ShortReal3 b = h_vertices.data[triangle.y];
-                const ShortReal3 c = h_vertices.data[triangle.z];
+                const ShortReal3 a = h_vertices.data[tri.x];
+                const ShortReal3 b = h_vertices.data[tri.y];
+                const ShortReal3 c = h_vertices.data[tri.z];
 
                 const Scalar3 aa = make_scalar3(a.x, a.y, a.z);
                 const Scalar3 bb = make_scalar3(b.x, b.y, b.z);
@@ -368,45 +359,42 @@ template<class Force> void TriangulatedGeometryStreamingMethod<Force>::stream(ui
                 const Scalar3 e1 = bb - aa;
                 const Scalar3 e2 = cc - aa;
                 const Scalar3 n = cross(e1, e2);
-                const Scalar nn = dot(n, n);
 
-                Scalar3 n_unit = n * (Scalar(1.0) / fast::sqrt(nn));
+                const Scalar3 n_unit = n * (Scalar(1.0) / fast::sqrt(dot(n, n)));
 
-                // backtrack the particle for dt to get to point of contact
-                pos_v += vel_v * best_t;
+                // advance the particle to the point of contact
+                pos += vel * best_t;
 
                 // apply boundary condition
                 if (m_geom->getNoSlip())
                     {
-                    vel_v = -vel_v;
+                    vel = -vel;
                     }
                 else
                     {
-                    vel_v = vel_v - Scalar(2.0) * dot(vel_v, n_unit) * n_unit;
+                    vel = vel - Scalar(2.0) * dot(vel, n_unit) * n_unit;
                     }
 
                 dt_remain -= best_t;
-                collide = (dt_remain > Scalar(0));
+                collide = (dt_remain > Scalar(0.0));
                 }
             else
                 {
-                pos_v += dt_remain * vel_v;
-                dt_remain = Scalar(0);
+                pos += dt_remain * vel;
+                dt_remain = Scalar(0.0);
                 collide = false;
                 }
             ++bounce;
             } while (dt_remain > 0 && collide && bounce < m_max_bounce);
 
-        if (dt_remain > Scalar(0))
+        if (dt_remain > Scalar(0.0))
             {
-            throw std::runtime_error("Particle did not finish collision after "
+            throw std::runtime_error("Particle did not finish streaming after "
                                      + std::to_string(m_max_bounce)
                                      + " bounces. Check the triangulated geometry");
             }
 
         // finalize velocity update
-        pos = pos_v;
-        vel = vel_v;
         vel += Scalar(0.5) * m_mpcd_dt * force.evaluate(pos) / mass;
 
         // wrap and update the position
@@ -424,7 +412,7 @@ template<class Force> void TriangulatedGeometryStreamingMethod<Force>::stream(ui
 
 namespace detail
     {
-//! Export mpcd::StreamingMethod to python
+//! Export mpcd::TriangulatedGeometryStreamingMethod to python
 /*!
  * \param m Python module to export to
  */

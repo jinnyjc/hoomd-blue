@@ -6,7 +6,6 @@
  * \brief CUDA kernel implementations for mpcd::TriangulatedGeometryStreamingMethodGPU
  */
 
-#include "ParticleDataUtilities.h"
 #include "TriangulatedGeometryStreamingMethodGPU.cuh"
 
 #pragma GCC diagnostic push
@@ -24,59 +23,6 @@ namespace gpu
     {
 #define DEVICE __device__ __forceinline__
 
-//! Insert operation for triangulated geometry
-/*!
- * Provides an axis-aligned bounding box per triangle to neighbor::LBVH during
- * construction. The bounding box of each triangle is the AABB of its three vertices.
- * One primitive in the LBVH corresponds to one triangle, so the LBVH primitive index
- * is the triangle index.
- */
-struct TriangleInsertOp
-    {
-    //! Constructor
-    /*!
-     * \param vertices_ List of vertices.
-     * \param triangles_ List of triangles.
-     * \param N_ Number of primitives (triangles) to insert.
-     */
-    TriangleInsertOp(const ShortReal3* vertices_, const uint3* triangles_, unsigned int N_)
-        : vertices(vertices_), triangles(triangles_), N(N_)
-        {
-        }
-
-    //! Construct bounding box for a triangle
-    /*!
-     * \param idx Nominal index of the primitive [0,N).
-     * \returns A neighbor::BoundingBox covering the three vertices.
-     */
-    DEVICE neighbor::BoundingBox get(unsigned int idx) const
-        {
-        const uint3 tri = triangles[idx];
-        const ShortReal3 a = vertices[tri.x];
-        const ShortReal3 b = vertices[tri.y];
-        const ShortReal3 c = vertices[tri.z];
-
-        const float3 lo = make_float3(min(a.x, min(b.x, c.x)),
-                                      min(a.y, min(b.y, c.y)),
-                                      min(a.z, min(b.z, c.z)));
-        const float3 hi = make_float3(max(a.x, max(b.x, c.x)),
-                                      max(a.y, max(b.y, c.y)),
-                                      max(a.z, max(b.z, c.z)));
-
-        return neighbor::BoundingBox(lo, hi);
-        }
-
-    //! Get the number of primitives
-    __host__ DEVICE unsigned int size() const
-        {
-        return N;
-        }
-
-    const ShortReal3* vertices; //!< Triangle vertices
-    const uint3* triangles;     //!< Triangle vertex indices
-    const unsigned int N;       //!< Number of primitives
-    };
-
 //! Path query operation for active particles
 /*!
  * For each currently active particle (one whose \a dt_remain > 0), the query
@@ -89,10 +35,10 @@ struct PathQueryOp
     {
     //! Constructor
     /*!
-     * \param d_pos_ Particle positions.
-     * \param d_vel_ Particle velocities.
-     * \param d_dt_remain_ Remaining timestep.
-     * \param d_active_idx_ Active particle indices.
+     * \param d_pos_ Particle positions
+     * \param d_vel_ Particle velocities
+     * \param d_dt_remain_ Remaining timesteps
+     * \param d_active_idx_ Active particle indices
      * \param N_ Number of active particles
      */
     PathQueryOp(const Scalar4* d_pos_,
@@ -116,10 +62,10 @@ struct PathQueryOp
             {
             }
 
-        Scalar3 pos;      //!< Particle position.
-        Scalar3 vel;      //!< Particle velocity.
-        Scalar dt_remain; //!< Remaining timestep.
-        unsigned int idx; //!< True particle index.
+        Scalar3 pos;      //!< Particle position
+        Scalar3 vel;      //!< Particle velocity
+        Scalar dt_remain; //!< Remaining timestep
+        unsigned int idx; //!< True particle index
         };
 
     // Traversal volume type used by neighbor::LBVHTraverser
@@ -127,10 +73,10 @@ struct PathQueryOp
 
     //! Loads the per-thread data
     /*!
-     * \param i Traversal thread index in [0, num_active).
-     * \returns The ThreadData required for traversal.
+     * \param i Traversal thread index in [0, num_active)
+     * \returns The ThreadData required for traversal
      *
-     * The threadData is only loaded for active particles. The true particle
+     * The ThreadData is only loaded for active particles. The true particle
      * index is mapped through \a d_active_idx together with its position, velocity,
      * and remaining timestep.
      */
@@ -147,13 +93,13 @@ struct PathQueryOp
 
     //! Return the traversal volume subject to a translation
     /*!
-     * \param q The current thread data.
-     * \param image The image vector for traversal.
-     * \returns The traversal bounding volume.
+     * \param q The current thread data
+     * \param image The image vector for traversal
+     * \returns The traversal bounding volume
      *
      * The ThreadData is converted to a search volume. The search volume is the
      * AABB of the path from \a q.pos to \a q.pos + \a q.dt_remain * \a q.vel.
-     * The \a image argumet is ignored as triangles are already unwrapped.
+     * The \a image argument is ignored as triangles are already unwrapped.
      */
     DEVICE Volume get(const ThreadData& q, const float3&) const
         {
@@ -167,9 +113,9 @@ struct PathQueryOp
 
     //! Perform the overlap test with the LBVH
     /*!
-     * \param v Traversal volume.
-     * \param box Box in LBVH to intersect with.
-     * \returns True if the volume and box overlap.
+     * \param v Traversal volume
+     * \param box Box in LBVH to intersect with
+     * \returns True if the volume and box overlap
      *
      * This performs broad-phase search through the overlap test between particle's
      * path AABB and triangle AABB.
@@ -181,9 +127,9 @@ struct PathQueryOp
 
     //! Refine the rough overlap test with a primitive
     /*!
-     * \param q The current thread data.
-     * \param primitive Index of the intersected primitive.
-     * \returns True if the volumes still overlap after refinement.
+     * \param q The current thread data
+     * \param primitive Index of the intersected primitive
+     * \returns True if the volumes still overlap after refinement
      *
      * Every candidate is forwarded to CollisionOutputOp::process to perform the
      * exact ray-triangle intersection test, so this always returns \a True.
@@ -211,7 +157,7 @@ struct PathQueryOp
  * For each candidate triangle visited during traversal, process() performs
  * a Woop-style watertight ray-triangle intersection between the particle's
  * remaining path and the triangle, keeping track of the earliest valid hit.
- * Once traversal is done, finalize() advances the particles, reflects its
+ * Once traversal is done, finalize() advances the particles and reflects its
  * velocity based on the boundary condition.
  */
 struct CollisionOutputOp
@@ -223,8 +169,8 @@ struct CollisionOutputOp
      * \param d_pos_ Particle positions
      * \param d_vel_ Particle velocities
      * \param d_dt_remain_ Remaining timesteps
-     * \param d_flags_ flag set to 1 if the particle's dt_remain > 0
-     * \param no_slip Boundary condition at the wall
+     * \param d_flags_ Flag set to 1 if the particle's dt_remain > 0
+     * \param no_slip_ Boundary condition at the wall
      * \param eps_ Numerical tolerance
      */
     CollisionOutputOp(const ShortReal3* vertices_,
@@ -255,9 +201,9 @@ struct CollisionOutputOp
         /*!
          * \param i_ Thread index
          * \param idx_ True particle index
-         * \param pos_ Particle positions
-         * \param vel_ Particle velocities
-         * \param dt_remain_ Remaining timesteps
+         * \param pos_ Particle position
+         * \param vel_ Particle velocity
+         * \param dt_remain_ Remaining timestep
          */
         DEVICE ThreadData(unsigned int i_,
                           unsigned int idx_,
@@ -282,8 +228,8 @@ struct CollisionOutputOp
     //! Setup the thread data
     /*!
      * \param i Thread index
-     * \param q Thread-local query data.
-     * \returns The ThreadData for output.
+     * \param q Thread-local query data
+     * \returns The ThreadData for output
      *
      * \tparam Type of QueryData.
      *
@@ -295,10 +241,10 @@ struct CollisionOutputOp
         return ThreadData(i, q.idx, q.pos, q.vel, q.dt_remain);
         }
 
-    //! Processes a newly intersected primitive.
+    //! Processes a newly intersected primitive
     /*!
-     * \param t The thread's output data.
-     * \param primitive The index of the candidate triangle to test.
+     * \param t The thread's output data
+     * \param primitive The index of the candidate triangle to test
      *
      * Performs the watertight ray-triangle intersection algorithm described in:
      * Woop, S., Benthin, C., Wald, I. (2013). Watertight Ray/Triangle Intersection.
@@ -319,7 +265,7 @@ struct CollisionOutputOp
         const Scalar3 n = cross(e1, e2);
 
         // exclude particles moving away from the triangle
-        if (dot(t.vel, n) <= Scalar(0))
+        if (dot(t.vel, n) <= Scalar(0.0))
             return;
 
         // calculate dimension where the ray direction is maximal
@@ -420,7 +366,7 @@ struct CollisionOutputOp
             }
         }
 
-    //! Finish the output job once the thread is ready to terminate.
+    //! Finish the output job once the thread is ready to terminate
     /*!
      * \param t The thread's output data
      *
@@ -447,21 +393,21 @@ struct CollisionOutputOp
             const Scalar3 e1 = bb - aa;
             const Scalar3 e2 = cc - aa;
             const Scalar3 n = cross(e1, e2);
-            const Scalar3 n_unit = n * (Scalar(1) / fast::sqrt(dot(n, n)));
+            const Scalar3 n_unit = n * (Scalar(1.0) / fast::sqrt(dot(n, n)));
 
-            // backtrack the particle for dt to get to point of contact
+            // advance the particle to the point of contact
             t.pos += t.vel * t.best_t;
             t.dt_remain -= t.best_t;
 
             if (no_slip)
                 t.vel = -t.vel;
             else
-                t.vel = t.vel - Scalar(2) * dot(t.vel, n_unit) * n_unit;
+                t.vel = t.vel - Scalar(2.0) * dot(t.vel, n_unit) * n_unit;
             }
         else
             {
             t.pos += t.dt_remain * t.vel;
-            t.dt_remain = Scalar(0);
+            t.dt_remain = Scalar(0.0);
             }
 
         const Scalar4 postype = d_pos[t.idx];
@@ -469,14 +415,14 @@ struct CollisionOutputOp
         d_pos[t.idx] = make_scalar4(t.pos.x, t.pos.y, t.pos.z, postype.w);
         d_vel[t.idx] = make_scalar4(t.vel.x, t.vel.y, t.vel.z, vel_cell.w);
         d_dt_remain[t.idx] = t.dt_remain;
-        d_flags[t.i] = (t.dt_remain > Scalar(0)) ? 1u : 0u;
+        d_flags[t.i] = (t.dt_remain > Scalar(0.0)) ? 1u : 0u;
         }
 
     const ShortReal3* vertices; //!< Triangle vertices
     const uint3* triangles;     //!< Triangle vertex indices
     Scalar4* d_pos;             //!< Particle positions
     Scalar4* d_vel;             //!< Particle velocities
-    Scalar* d_dt_remain;        //!< Remaining timestep
+    Scalar* d_dt_remain;        //!< Remaining timesteps
     unsigned int* d_flags;      //!< Flag set to 1 if the particle's dt_remain > 0
     bool no_slip;               //!< Boundary condition at the wall
     Scalar eps;                 //!< Numerical tolerance
@@ -501,108 +447,15 @@ hipError_t triangulated_compact_active(void* cub_tmp,
     return hipSuccess;
     }
 
-//! Host function to convert a double to a float in round-down mode
-float double2float_rd(double x)
-    {
-    float xf = static_cast<float>(x);
-    if (static_cast<double>(xf) > x)
-        {
-        xf = std::nextafterf(xf, -std::numeric_limits<float>::infinity());
-        }
-    return xf;
-    }
-
-//! Host function to convert a double to a float in round-up mode
-float double2float_ru(double x)
-    {
-    float xf = static_cast<float>(x);
-    if (static_cast<double>(xf) < x)
-        {
-        xf = std::nextafterf(xf, std::numeric_limits<float>::infinity());
-        }
-    return xf;
-    }
-
 /*!
- * Initializes the shared pointer for the underlying LBVH.
+ * Initializes the underlying LBVHTraverser.
  */
-TriangleLBVHWrapper::TriangleLBVHWrapper()
-    {
-    lbvh_ = new neighbor::LBVH();
-    }
-
-TriangleLBVHWrapper::~TriangleLBVHWrapper()
-    {
-    delete lbvh_;
-    }
-
-/*!
- * \param vertices Triangle vertices
- * \param triangles Triangle vertex indices
- * \param num_triangles Number of triangles
- * \param stream CUDA stream for execution
- */
-void TriangleLBVHWrapper::setup(const ShortReal3* vertices,
-                                const uint3* triangles,
-                                unsigned int num_triangles,
-                                hipStream_t stream)
-    {
-    TriangleInsertOp insert(vertices, triangles, num_triangles);
-    lbvh_->setup(stream, insert);
-    }
-
-/*!
- * \param vertices Triangle vertices
- * \param triangles Triangle vertex indices
- * \param num_triangles Number of triangles
- * \param lo Lower bound of box
- * \param hi Upper bound of box
- * \param stream CUDA stream for execution
- * \param block_size CUDA block size for execution
- *
- * If HOOMD is using double-precision Scalars, then the lo and hi bounds of the
- * box are internally converted to floats using round-down and round-up modes,
- * respectively, which conserves the original box.
- */
-void TriangleLBVHWrapper::build(const ShortReal3* vertices,
-                                const uint3* triangles,
-                                unsigned int num_triangles,
-                                const Scalar3& lo,
-                                const Scalar3& hi,
-                                hipStream_t stream,
-                                unsigned int block_size)
-    {
-#if HOOMD_LONGREAL_SIZE == 64
-    float3 lof = make_float3(double2float_rd(lo.x), double2float_rd(lo.y), double2float_rd(lo.z));
-    float3 hif = make_float3(double2float_ru(hi.x), double2float_ru(hi.y), double2float_ru(hi.z));
-#else
-    float3 lof = lo;
-    float3 hif = hi;
-#endif
-
-    TriangleInsertOp insert(vertices, triangles, num_triangles);
-    lbvh_->build(neighbor::LBVH::LaunchParameters(block_size, stream), insert, lof, hif);
-    }
-
-unsigned int TriangleLBVHWrapper::getN() const
-    {
-    return lbvh_->getN();
-    }
-
-std::vector<unsigned int> TriangleLBVHWrapper::getTunableParameters() const
-    {
-    return lbvh_->getTunableParameters();
-    }
-
-/*!
- * Initializes the shared pointer for the underlying LBVHTraverser.
- */
-TriangleLBVHTraverserWrapper::TriangleLBVHTraverserWrapper()
+PathLBVHTraverserWrapper::PathLBVHTraverserWrapper()
     {
     trav_ = new neighbor::LBVHTraverser();
     }
 
-TriangleLBVHTraverserWrapper::~TriangleLBVHTraverserWrapper()
+PathLBVHTraverserWrapper::~PathLBVHTraverserWrapper()
     {
     delete trav_;
     }
@@ -613,7 +466,7 @@ TriangleLBVHTraverserWrapper::~TriangleLBVHTraverserWrapper()
  *
  * A NullTransformOp is used as the LBVH primitive order is the triangle order.
  */
-void TriangleLBVHTraverserWrapper::setup(neighbor::LBVH& lbvh, hipStream_t stream)
+void PathLBVHTraverserWrapper::setup(neighbor::LBVH& lbvh, hipStream_t stream)
     {
     neighbor::NullTransformOp transform;
     trav_->setup(stream, lbvh, transform);
@@ -623,7 +476,7 @@ void TriangleLBVHTraverserWrapper::setup(neighbor::LBVH& lbvh, hipStream_t strea
  * \param args Common arguments for a streaming kernel
  * \param d_vertices Triangle vertices
  * \param d_triangles Triangle vertex indices
- * \param d_dt_remain Remaining timestep
+ * \param d_dt_remain Remaining timesteps
  * \param d_active_idx Active particle indices
  * \param d_flags Flags set to 1 if the particle's dt_remain > 0
  * \param num_active Number of active particles
@@ -635,17 +488,17 @@ void TriangleLBVHTraverserWrapper::setup(neighbor::LBVH& lbvh, hipStream_t strea
  * A single zero image (neighbor::SelfOp) is used as the triangle is already unwrapped
  * given the unwrap distance. A NullTransformOp is used as no primitive mapping is needed.
  */
-void TriangleLBVHTraverserWrapper::traverse(const triangulated_stream_args_t& args,
-                                            const ShortReal3* d_vertices,
-                                            const uint3* d_triangles,
-                                            Scalar* d_dt_remain,
-                                            const unsigned int* d_active_idx,
-                                            unsigned int* d_flags,
-                                            unsigned int num_active,
-                                            bool no_slip,
-                                            neighbor::LBVH& lbvh,
-                                            hipStream_t stream,
-                                            unsigned int block_size)
+void PathLBVHTraverserWrapper::traverse(const triangulated_stream_args_t& args,
+                                        const ShortReal3* d_vertices,
+                                        const uint3* d_triangles,
+                                        Scalar* d_dt_remain,
+                                        const unsigned int* d_active_idx,
+                                        unsigned int* d_flags,
+                                        unsigned int num_active,
+                                        bool no_slip,
+                                        neighbor::LBVH& lbvh,
+                                        hipStream_t stream,
+                                        unsigned int block_size)
     {
     PathQueryOp query(args.d_pos, args.d_vel, d_dt_remain, d_active_idx, num_active);
 
@@ -669,7 +522,7 @@ void TriangleLBVHTraverserWrapper::traverse(const triangulated_stream_args_t& ar
                     transform);
     }
 
-std::vector<unsigned int> TriangleLBVHTraverserWrapper::getTunableParameters() const
+std::vector<unsigned int> PathLBVHTraverserWrapper::getTunableParameters() const
     {
     return trav_->getTunableParameters();
     }

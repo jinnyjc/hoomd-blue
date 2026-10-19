@@ -76,6 +76,7 @@ if(ENABLE_HIP)
         ReverseNonequilibriumShearFlowGPU.cc
         SorterGPU.cc
         SRDCollisionMethodGPU.cc
+        TriangulatedGeometryFillerGPU.cc
         )
     list(APPEND _mpcd_headers
         ATCollisionMethodGPU.cuh
@@ -102,6 +103,9 @@ if(ENABLE_HIP)
         SorterGPU.h
         SRDCollisionMethodGPU.cuh
         SRDCollisionMethodGPU.h
+        TriangulatedGeometry.cuh
+        TriangulatedGeometryFillerGPU.cuh
+        TriangulatedGeometryFillerGPU.h
         TriangulatedGeometryStreamingMethodGPU.cuh
         TriangulatedGeometryStreamingMethodGPU.h
         )
@@ -117,6 +121,8 @@ if(ENABLE_HIP)
         ReverseNonequilibriumShearFlowGPU.cu
         SorterGPU.cu
         SRDCollisionMethodGPU.cu
+        TriangulatedGeometry.cu
+        TriangulatedGeometryFillerGPU.cu
         TriangulatedGeometryStreamingMethodGPU.cu
         )
 endif()

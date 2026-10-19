@@ -310,9 +310,13 @@ class TriangulatedGeometryFiller(VirtualParticleFiller):
 
     def _attach_hook(self):
         sim = self._simulation
-        sim._warn_if_seed_unset()
 
-        self._cpp_obj = _mpcd.TriangulatedGeometryFiller(
+        if isinstance(sim.device, hoomd.device.GPU):
+            class_ = _mpcd.TriangulatedGeometryFillerGPU
+        else:
+            class_ = _mpcd.TriangulatedGeometryFiller
+
+        self._cpp_obj = class_(
             sim.state._cpp_sys_def,
             self.type,
             self.density,

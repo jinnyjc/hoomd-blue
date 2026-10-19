@@ -3,6 +3,9 @@
 
 #include "hoomd/mpcd/TriangulatedGeometry.h"
 #include "hoomd/mpcd/TriangulatedGeometryFiller.h"
+#ifdef ENABLE_HIP
+#include "hoomd/mpcd/TriangulatedGeometryFillerGPU.h"
+#endif // ENABLE_HIP
 
 #include "hoomd/SnapshotSystemData.h"
 #include "hoomd/test/upp11_config.h"
@@ -319,3 +322,19 @@ UP_TEST(triangulated_plates_fill_tilted)
         std::make_shared<ExecutionConfiguration>(ExecutionConfiguration::CPU),
         Scalar(0.5));
     }
+
+#ifdef ENABLE_HIP
+UP_TEST(triangulated_plates_fill_gpu)
+    {
+    triangulated_plates_fill_test<mpcd::TriangulatedGeometryFillerGPU>(
+        std::make_shared<ExecutionConfiguration>(ExecutionConfiguration::GPU),
+        Scalar(0.0));
+    }
+
+UP_TEST(triangulated_plates_fill_tilted_gpu)
+    {
+    triangulated_plates_fill_test<mpcd::TriangulatedGeometryFillerGPU>(
+        std::make_shared<ExecutionConfiguration>(ExecutionConfiguration::GPU),
+        Scalar(0.5));
+    }
+#endif // ENABLE_HIP

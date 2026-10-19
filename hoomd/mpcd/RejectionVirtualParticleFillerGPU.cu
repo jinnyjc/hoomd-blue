@@ -6,10 +6,10 @@
  * \brief Definition of CUDA kernels for mpcd::RejectionVirtualParticleFillerGPU
  */
 
+#include "RejectionVirtualParticleFillerGPU.cuh"
+
 #include <hipcub/hipcub.hpp>
 #include <thrust/iterator/counting_iterator.h>
-
-#include "RejectionVirtualParticleFillerGPU.cuh"
 
 namespace hoomd
     {
@@ -59,7 +59,7 @@ compact_virtual_particle_indices(void* d_tmp,
                                  unsigned int* d_keep_indices,
                                  unsigned int* d_num_keep)
     {
-    thrust::counting_iterator<int> itr(0);
+    thrust::counting_iterator<unsigned int> itr(0);
     cub::DeviceSelect::Flagged(d_tmp,
                                tmp_bytes,
                                itr,

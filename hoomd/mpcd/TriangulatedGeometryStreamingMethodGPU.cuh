@@ -14,6 +14,7 @@
 #include <hip/hip_runtime.h>
 
 #include "ParticleDataUtilities.h"
+#include "TriangulatedGeometry.cuh"
 #include "hoomd/BoxDim.h"
 #include "hoomd/HOOMDMath.h"
 
@@ -52,66 +53,21 @@ struct triangulated_stream_args_t
     const unsigned int N; //!< Number of particles
     };
 
-//! Wrapper around neighbor::LBVH for triangulated geometry
-/*!
- * This wrapper only exposes data types that are natively supported in HOOMD
- * so that all neighbor-specific templates and structs can be handled only
- * in CUDA code.
- */
-class TriangleLBVHWrapper
-    {
-    public:
-    //! Constructor
-    TriangleLBVHWrapper();
-
-    //! Destructor
-    ~TriangleLBVHWrapper();
-
-    //! Setup the LBVH
-    void setup(const ShortReal3* vertices,
-               const uint3* triangles,
-               unsigned int n_triangles,
-               hipStream_t stream);
-
-    //! Build the LBVH
-    void build(const ShortReal3* vertices,
-               const uint3* triangles,
-               unsigned int n_triangles,
-               const Scalar3& lo,
-               const Scalar3& hi,
-               hipStream_t stream,
-               unsigned int block_size);
-
-    //! Get underlying LBVH
-    neighbor::LBVH* get()
-        {
-        return lbvh_;
-        }
-
-    //! Get number of primitives in the LBVH
-    unsigned int getN() const;
-
-    //! Get the list of tunable parameters
-    std::vector<unsigned int> getTunableParameters() const;
-
-    private:
-    neighbor::LBVH* lbvh_; //!< Underlying neighbor::LBVH
-    };
-
 //! Wrapper around neighbor::LBVHTraverser for triangulated geometry
 /*!
- * This wrapper only exposes data types that are natively supported in HOOMD
- * so that all neighbor-specific templates and structs can be handled only
+ * The query volume of each active particle is the AABB of its remaining path,
+ * see PathQueryOp. This wrapper only exposes data types that are natively supported
+ * in HOOMD so that all neighbor-specific templates and structs can be handled only
  * in CUDA code.
  */
-class TriangleLBVHTraverserWrapper
+class PathLBVHTraverserWrapper
     {
     public:
     //! Constructor
-    TriangleLBVHTraverserWrapper();
+    PathLBVHTraverserWrapper();
 
-    /// Destructor
-    ~TriangleLBVHTraverserWrapper();
+    //! Destructor
+    ~PathLBVHTraverserWrapper();
 
     //! Setup the LBVH traverser
     void setup(neighbor::LBVH& lbvh, hipStream_t stream);
@@ -150,7 +106,7 @@ hipError_t triangulated_stream_init(const triangulated_stream_args_t& args,
  * \param cub_tmp_bytes       Number of bytes in temporary storage
  * \param d_active_idx        Current active particle indices
  * \param d_next_active_idx   Compacted output active indices
- * \param d_flags             Flag set to 1 if the particle's dt_remain > 0
+ * \param d_flags             Flags set to 1 if the particle's dt_remain > 0
  * \param d_num_active        Output count of active particles
  * \param num_active          Current number of active particles
  */

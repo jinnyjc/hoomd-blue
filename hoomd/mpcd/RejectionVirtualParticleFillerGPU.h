@@ -50,17 +50,19 @@ class PYBIND11_EXPORT RejectionVirtualParticleFillerGPU
           m_keep_indices(this->m_exec_conf), m_num_keep(this->m_exec_conf),
           m_max_observed(this->m_exec_conf)
         {
-        m_tuner1.reset(new Autotuner<1>({AutotunerBase::makeBlockSizeRange(this->m_exec_conf)},
-                                        this->m_exec_conf,
-                                        "mpcd_rejection_filler_classify_cells"));
-        m_tuner2.reset(new Autotuner<2>({AutotunerBase::makeBlockSizeRange(this->m_exec_conf),
-                                         AutotunerBase::getTppListPow2(this->m_exec_conf)},
-                                        this->m_exec_conf,
-                                        "mpcd_rejection_filler_draw_particles"));
-        m_tuner3.reset(new Autotuner<1>({AutotunerBase::makeBlockSizeRange(this->m_exec_conf)},
-                                        this->m_exec_conf,
-                                        "mpcd_rejection_filler_tag_particles"));
-        this->m_autotuners.insert(this->m_autotuners.end(), {m_tuner1, m_tuner2, m_tuner3});
+        m_classify_tuner.reset(
+            new Autotuner<1>({AutotunerBase::makeBlockSizeRange(this->m_exec_conf)},
+                             this->m_exec_conf,
+                             "mpcd_rejection_filler_classify_cells"));
+        m_draw_tuner.reset(new Autotuner<2>({AutotunerBase::makeBlockSizeRange(this->m_exec_conf),
+                                             AutotunerBase::getTppListPow2(this->m_exec_conf)},
+                                            this->m_exec_conf,
+                                            "mpcd_rejection_filler_draw_particles"));
+        m_tag_tuner.reset(new Autotuner<1>({AutotunerBase::makeBlockSizeRange(this->m_exec_conf)},
+                                           this->m_exec_conf,
+                                           "mpcd_rejection_filler_tag_particles"));
+        this->m_autotuners.insert(this->m_autotuners.end(),
+                                  {m_classify_tuner, m_draw_tuner, m_tag_tuner});
         }
 
     protected:
@@ -73,12 +75,12 @@ class PYBIND11_EXPORT RejectionVirtualParticleFillerGPU
     private:
     GPUArray<bool> m_cell_flags;     //!< One flag per cell, set if the cell must be filled
     GPUArray<bool> m_keep_particles; //!< Track whether particles are in/out of bounds for geometry
-    GPUArray<unsigned int> m_keep_indices;  //!< Indices for particles out of bounds for geometry
-    GPUFlags<unsigned int> m_num_keep;      //!< Number of particles to keep
-    GPUFlags<unsigned int> m_max_observed;  //!< Largest per-cell draw observed by the kernel
-    std::shared_ptr<Autotuner<1>> m_tuner1; //!< Autotuner for cell classification
-    std::shared_ptr<Autotuner<2>> m_tuner2; //!< Autotuner for drawing particles
-    std::shared_ptr<Autotuner<1>> m_tuner3; //!< Autotuner for particle tagging
+    GPUArray<unsigned int> m_keep_indices; //!< Indices for particles out of bounds for geometry
+    GPUFlags<unsigned int> m_num_keep;     //!< Number of particles to keep
+    GPUFlags<unsigned int> m_max_observed; //!< Largest per-cell draw observed by the kernel
+    std::shared_ptr<Autotuner<1>> m_classify_tuner; //!< Autotuner for cell classification
+    std::shared_ptr<Autotuner<2>> m_draw_tuner;     //!< Autotuner for drawing particles
+    std::shared_ptr<Autotuner<1>> m_tag_tuner;      //!< Autotuner for particle tagging
     };
 
 template<class Geometry> void RejectionVirtualParticleFillerGPU<Geometry>::classifyCells()
@@ -108,15 +110,15 @@ template<class Geometry> void RejectionVirtualParticleFillerGPU<Geometry>::class
                             global_box.getTiltFactorXZ(),
                             global_box.getTiltFactorYZ());
 
-    const Scalar mean_per_cell = this->m_density * draw_box.getVolume();
+    const Scalar mean_in_region = this->m_density * draw_box.getVolume();
 
-    // when not set by the user, use the mean number of solvent particles in the sampling region
+    // when not set by the user, use the mean number of solvent particles in the swept region
     // plus eight standard deviations of the Poisson distribution
     const unsigned int num_classify_trials
         = (this->m_num_classify_trials > 0)
               ? this->m_num_classify_trials
               : static_cast<unsigned int>(
-                    std::ceil(mean_per_cell + Scalar(8.0) * std::sqrt(mean_per_cell)));
+                    std::ceil(mean_in_region + Scalar(8.0) * std::sqrt(mean_in_region)));
 
     if (num_cells > m_cell_flags.getNumElements())
         {
@@ -148,12 +150,12 @@ template<class Geometry> void RejectionVirtualParticleFillerGPU<Geometry>::class
                                               num_classify_trials,
                                               this->m_sysdef->getSeed(),
                                               this->m_filler_id,
-                                              m_tuner1->getParam()[0]);
-        m_tuner1->begin();
+                                              m_classify_tuner->getParam()[0]);
+        m_classify_tuner->begin();
         mpcd::gpu::classify_cells<Geometry>(args, *(this->m_geom));
         if (this->m_exec_conf->isCUDAErrorCheckingEnabled())
             CHECK_CUDA_ERROR();
-        m_tuner1->end();
+        m_classify_tuner->end();
 
             {
             // compact the flagged cells into a list of indices with CUB
@@ -182,7 +184,7 @@ template<class Geometry> void RejectionVirtualParticleFillerGPU<Geometry>::class
     this->m_num_fill_cells = m_num_keep.readFlags();
 
     this->m_exec_conf->msg->notice(6)
-        << "MPCD RejectionVirtualParticleFiller: filling " << this->m_num_fill_cells << " of "
+        << "MPCD RejectionVirtualParticleFillerGPU: filling " << this->m_num_fill_cells << " of "
         << num_cells << " cells" << std::endl;
     }
 
@@ -218,7 +220,7 @@ template<class Geometry> void RejectionVirtualParticleFillerGPU<Geometry>::fill(
     const Scalar mean_per_cell = this->m_density * cell_volume;
 
     // initial guess for the per-cell capacity of the temporary arrays: eight standard deviations
-    // above the Poisson mean.
+    // above the Poisson mean
     if (this->m_alloc_per_cell == 0)
         {
         this->m_alloc_per_cell = static_cast<unsigned int>(
@@ -286,14 +288,14 @@ template<class Geometry> void RejectionVirtualParticleFillerGPU<Geometry>::fill(
                                                           timestep,
                                                           this->m_sysdef->getSeed(),
                                                           this->m_filler_id,
-                                                          m_tuner2->getParam()[0],
-                                                          m_tuner2->getParam()[1],
+                                                          m_draw_tuner->getParam()[0],
+                                                          m_draw_tuner->getParam()[1],
                                                           m_max_observed.getDeviceFlags());
-            m_tuner2->begin();
+            m_draw_tuner->begin();
             mpcd::gpu::draw_virtual_particles<Geometry>(args, *(this->m_geom));
             if (this->m_exec_conf->isCUDAErrorCheckingEnabled())
                 CHECK_CUDA_ERROR();
-            m_tuner2->end();
+            m_draw_tuner->end();
 
                 {
                 // compact the selected particles down with CUB
@@ -344,7 +346,7 @@ template<class Geometry> void RejectionVirtualParticleFillerGPU<Geometry>::fill(
         ArrayHandle<unsigned int> d_tag(this->m_mpcd_pdata->getTags(),
                                         access_location::device,
                                         access_mode::readwrite);
-        m_tuner3->begin();
+        m_tag_tuner->begin();
         mpcd::gpu::copy_virtual_particles(d_keep_indices.data,
                                           d_pos.data,
                                           d_vel.data,
@@ -354,16 +356,16 @@ template<class Geometry> void RejectionVirtualParticleFillerGPU<Geometry>::fill(
                                           first_idx,
                                           first_tag,
                                           num_selected,
-                                          m_tuner3->getParam()[0]);
+                                          m_tag_tuner->getParam()[0]);
         if (this->m_exec_conf->isCUDAErrorCheckingEnabled())
             CHECK_CUDA_ERROR();
-        m_tuner3->end();
+        m_tag_tuner->end();
         }
     }
 
 namespace detail
     {
-//! Export RejectionVirtualParticleFillerGPU to python
+//! Export mpcd::RejectionVirtualParticleFillerGPU to python
 template<class Geometry> void export_RejectionVirtualParticleFillerGPU(pybind11::module& m)
     {
     namespace py = pybind11;

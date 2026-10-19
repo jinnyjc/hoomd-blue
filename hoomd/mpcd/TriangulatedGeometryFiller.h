@@ -3,7 +3,7 @@
 
 /*!
  * \file mpcd/TriangulatedGeometryFiller.h
- * \brief Declaration of TriangulatedGeometryFiller
+ * \brief Declaration of mpcd::TriangulatedGeometryFiller
  */
 
 #ifndef MPCD_TRIANGULATED_GEOMETRY_FILLER_H_
@@ -23,143 +23,33 @@ namespace hoomd
     {
 namespace mpcd
     {
-
-//! Closest point on a triangle to a point
-/*!
- * \param p Query point
- * \param a First triangle vertex
- * \param b Second triangle vertex
- * \param c Third triangle vertex
- * \returns The point on triangle abc (including its edges and vertices) closest to p
- *
- * The plane containing the triangle is partitioned into seven Voronoi regions (three
- * vertex regions, three edge regions, and the face). The region containing p is found
- * from the signs of six dot products, and p is projected accordingly: onto a vertex,
- * onto an edge segment, or onto the face using barycentric coordinates.
- *
- * This implementation follows the method described in:
- * Ericson, C. (2005). Real-Time Collision Detection. Section 5.1.5.
- */
-inline Scalar3
-closestPointOnTriangle(const Scalar3& p, const Scalar3& a, const Scalar3& b, const Scalar3& c)
-    {
-    const Scalar3 ab = b - a;
-    const Scalar3 ac = c - a;
-    const Scalar3 ap = p - a;
-
-    // vertex region a
-    const Scalar d1 = dot(ab, ap);
-    const Scalar d2 = dot(ac, ap);
-    if (d1 <= Scalar(0.0) && d2 <= Scalar(0.0))
-        return a;
-
-    // vertex region b
-    const Scalar3 bp = p - b;
-    const Scalar d3 = dot(ab, bp);
-    const Scalar d4 = dot(ac, bp);
-    if (d3 >= Scalar(0.0) && d4 <= d3)
-        return b;
-
-    // vertex region c
-    const Scalar3 cp = p - c;
-    const Scalar d5 = dot(ab, cp);
-    const Scalar d6 = dot(ac, cp);
-    if (d6 >= Scalar(0.0) && d5 <= d6)
-        return c;
-
-    // edge region ab
-    const Scalar vc = d1 * d4 - d3 * d2;
-    if (vc <= Scalar(0.0) && d1 >= Scalar(0.0) && d3 <= Scalar(0.0))
-        {
-        const Scalar v = d1 / (d1 - d3);
-        return a + v * ab;
-        }
-
-    // edge region ac
-    const Scalar vb = d5 * d2 - d1 * d6;
-    if (vb <= Scalar(0.0) && d2 >= Scalar(0.0) && d6 <= Scalar(0.0))
-        {
-        const Scalar w = d2 / (d2 - d6);
-        return a + w * ac;
-        }
-
-    // edge region bc
-    const Scalar va = d3 * d6 - d5 * d4;
-    if (va <= Scalar(0.0) && (d4 - d3) >= Scalar(0.0) && (d5 - d6) >= Scalar(0.0))
-        {
-        const Scalar w = (d4 - d3) / ((d4 - d3) + (d5 - d6));
-        return b + w * (c - b);
-        }
-
-    // face region: interpolate with normalized barycentric coordinates
-    const Scalar denom = Scalar(1.0) / (va + vb + vc);
-    const Scalar v = vb * denom;
-    const Scalar w = vc * denom;
-    return a + v * ab + w * ac;
-    }
-
-//! Test whether a point lies outside the fluid using a list of candidate triangles
-/*!
- * \param p Query point
- * \param tris Candidate triangle indices
- * \param num_tris Number of candidates
- * \param verts List of vertices
- * \param tri_data List of triangles
- * \returns True if p lies on the side that the normal of the nearest candidate points to
- *
- * The sign of the dot product between (p - q) and the triangle normal decides the side,
- * where q is the closest point on the nearest candidate. Normals point out of the fluid,
- * and a point exactly on the surface is treated as fluid.
- */
-inline bool isOutside(const Scalar3& p,
-                      const unsigned int* tris,
-                      unsigned int num_tris,
-                      const ShortReal3* verts,
-                      const uint3* tri_data)
-    {
-    Scalar best_d2(0);
-    Scalar best_sign(0);
-    for (unsigned int t = 0; t < num_tris; ++t)
-        {
-        const uint3 tri = tri_data[tris[t]];
-
-        const ShortReal3 va = verts[tri.x];
-        const ShortReal3 vb = verts[tri.y];
-        const ShortReal3 vc = verts[tri.z];
-        const Scalar3 a = make_scalar3(va.x, va.y, va.z);
-        const Scalar3 b = make_scalar3(vb.x, vb.y, vb.z);
-        const Scalar3 c = make_scalar3(vc.x, vc.y, vc.z);
-
-        const Scalar3 q = closestPointOnTriangle(p, a, b, c);
-        const Scalar3 d = p - q;
-        const Scalar d2 = dot(d, d);
-        if (t == 0 || d2 < best_d2)
-            {
-            best_d2 = d2;
-            const Scalar3 n = cross(b - a, c - a);
-            best_sign = dot(d, n);
-            }
-        }
-    return best_sign > Scalar(0.0);
-    }
-
 //! Adds virtual particles to MPCD particle data for a triangulated geometry
 /*!
- * The filler first identifies the collision cells that are cut by the mesh boundary and
- * only draws particles in those cells. Because the triangles are static, the candidate
- * triangles for each cell are found once during classification and stored, then reused
- * every fill step. Classification builds the candidate list of each cut cell and stores
- * it in a uniform per-cell allocation sized by the largest count.
+ * Here we implement a virtual particle filler for a triangulated geometry using the rejection
+ * sampling method. The filler first identifies the collision cells that are cut by the
+ * triangulated geometry, i.e., the cells that can contain both fluid and solid, and then
+ * only draws particles in those cells.
  *
- * A point is classified against the mesh by finding the nearest candidate triangle and
- * checking the sign of the dot product between (p - q) and the triangle normal, where q
- * is the closest point on that triangle. Normals point out of the fluid, so a strictly
- * positive sign means the point is outside the fluid and should be filled.
+ * To identify those cells, the AABB of each cell grown by the maximum grid shift (swept region)
+ * is queried against the BVH of the triangles. A cell whose swept region holds no triangles
+ * cannot be cut and is skipped. Otherwise, trial points are drawn in the swept region and tested
+ * against those triangles. A point is classified by finding the nearest triangle and checking
+ * the sign of the dot product between (p - q) and the triangle normal, where q is the
+ * closest point on that triangle. Normals point out of the fluid, so a positive sign means that
+ * point is outside the fluid. A cell with trial points on both sides needs filling.
  *
- * During filling, a Poisson number of particles with mean equal to the fill density
- * times the cell volume is drawn uniformly in each marked cell. Each particle is tested
- * against the candidate triangles of its cell and kept only if it lies outside. The
- * per-cell capacity of temporary arrays is grown whenever a draw exceeds it.
+ * The triangles are static, so each fill cell stores its candidate triangles once during
+ * classification and reuses them every fill step. Particles are drawn in the cell itself, so
+ * only the triangles whose AABBs overlap the cell, not the swept region, are stored. A fill cell
+ * with no candidates lies entirely on one side of the surface: it is kept if its center is outside
+ * the fluid and dropped otherwise. The classification is redone only when the simulation box
+ * changes.
+ *
+ * During filling, the number of particles drawn in each cell is Poisson distributed with mean
+ * equal to the fill density times the cell volume. Each drawn particle is kept only if it lies
+ * outside the fluid according to the candidate triangles of its cell, or without a test if the
+ * cell has none. The per-cell capacity of the temporary arrays is grown whenever a draw exceeds
+ * it.
  */
 class PYBIND11_EXPORT TriangulatedGeometryFiller : public mpcd::VirtualParticleFiller
     {
@@ -183,13 +73,13 @@ class PYBIND11_EXPORT TriangulatedGeometryFiller : public mpcd::VirtualParticleF
     //! Destructor
     virtual ~TriangulatedGeometryFiller();
 
-    //! Get the streaming geometry
+    //! Get the triangulated geometry
     std::shared_ptr<const TriangulatedGeometry> getGeometry() const
         {
         return m_geom;
         }
 
-    //! Set the streaming geometry
+    //! Set the triangulated geometry
     void setGeometry(std::shared_ptr<const TriangulatedGeometry> geom)
         {
         m_geom = geom;
@@ -228,7 +118,7 @@ class PYBIND11_EXPORT TriangulatedGeometryFiller : public mpcd::VirtualParticleF
     bool m_need_classify;                //!< True if the cell classification is out of date
     unsigned int m_alloc_per_cell;       //!< Per-cell particle capacity of the temporary arrays
 
-    GPUArray<unsigned int> m_tri_list;         //!< Candidate triangles
+    GPUArray<unsigned int> m_tri_list;         //!< Candidate triangles of each fill cell
     GPUArray<unsigned int> m_num_tri_per_cell; //!< Number of candidate triangles per fill cell
     unsigned int m_max_tri_per_cell;           //!< Uniform per-cell capacity of m_tri_list
 
@@ -238,35 +128,36 @@ class PYBIND11_EXPORT TriangulatedGeometryFiller : public mpcd::VirtualParticleF
         m_need_classify = true;
         }
 
-    //! Determine which cells need virtual particles and store their candidate triangles
+    //! Determine which cells need virtual particles and store their triangles
     virtual void classifyCells();
 
-    //! Compute the Cartesian AABB of the region a cell sweeps under grid shifting
+    //! Compute the Cartesian AABB of a cell grown by a fractional margin on both sides
     /*!
      * \param gi Global cell index along x
      * \param gj Global cell index along y
      * \param gk Global cell index along z
      * \param inv_dim Fractional width of one cell along each lattice vector
-     * \param max_shift Maximum fractional grid shift
+     * \param margin Fractional margin added on both sides of the cell
      * \param global_box Global simulation box
-     * \returns Axis-aligned bounding box of the swept region
+     * \returns Axis-aligned bounding box of the grown cell
      *
-     * The swept region is the cell grown by the maximum grid shift on both sides. Its
-     * bounding box is taken over the 8 corners so that tilted boxes are handled.
+     * The cell is grown by \a margin on both sides before its corners are converted to Cartesian
+     * coordinates. Passing the maximum grid shift gives the AABB of the swept region, and
+     * passing zero gives the AABB of the cell itself.
      */
-    hoomd::detail::AABB computeSweptCellAABB(int gi,
-                                             int gj,
-                                             int gk,
-                                             const Scalar3& inv_dim,
-                                             const Scalar3& max_shift,
-                                             const BoxDim& global_box) const
+    hoomd::detail::AABB computeCellAABB(int gi,
+                                        int gj,
+                                        int gk,
+                                        const Scalar3& inv_dim,
+                                        const Scalar3& margin,
+                                        const BoxDim& global_box) const
         {
-        const Scalar3 f_lo = make_scalar3(gi * inv_dim.x - max_shift.x,
-                                          gj * inv_dim.y - max_shift.y,
-                                          gk * inv_dim.z - max_shift.z);
-        const Scalar3 f_hi = make_scalar3((gi + 1) * inv_dim.x + max_shift.x,
-                                          (gj + 1) * inv_dim.y + max_shift.y,
-                                          (gk + 1) * inv_dim.z + max_shift.z);
+        const Scalar3 f_lo = make_scalar3(gi * inv_dim.x - margin.x,
+                                          gj * inv_dim.y - margin.y,
+                                          gk * inv_dim.z - margin.z);
+        const Scalar3 f_hi = make_scalar3((gi + 1) * inv_dim.x + margin.x,
+                                          (gj + 1) * inv_dim.y + margin.y,
+                                          (gk + 1) * inv_dim.z + margin.z);
 
         // take the bounding box of the 8 corners so that tilted boxes are handled
         Scalar3 lower = global_box.makeCoordinates(f_lo);

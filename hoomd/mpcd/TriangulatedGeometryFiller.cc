@@ -3,7 +3,7 @@
 
 /*!
  * \file mpcd/TriangulatedGeometryFiller.cc
- * \brief Definition of TriangulatedGeometryFiller
+ * \brief Definition of mpcd::TriangulatedGeometryFiller
  */
 
 #include "TriangulatedGeometryFiller.h"
@@ -61,17 +61,18 @@ void TriangulatedGeometryFiller::classifyCells()
                                          Scalar(1.0) / global_dim.y,
                                          Scalar(1.0) / global_dim.z);
 
-    // a cell can be shifted by at most this much along each lattice vector, so sampling the cell
-    // grown by that amount on both sides covers every position it can take under grid shifting
+    // a cell can be shifted by at most this much along each lattice vector, so the cell grown by
+    // that amount on both sides (the swept region) covers every position it can take under grid
+    // shifting
     const Scalar3 max_shift
         = m_cl->isGridShifting() ? m_cl->getMaxGridShift() : make_scalar3(0, 0, 0);
     const Scalar3 width = make_scalar3(inv_dim.x + Scalar(2.0) * max_shift.x,
                                        inv_dim.y + Scalar(2.0) * max_shift.y,
                                        inv_dim.z + Scalar(2.0) * max_shift.z);
 
-    // trial points are drawn uniformly in an orthorhombic box with the size of the sampling
-    // region, wrapped by this tilted box onto the skewed shape a cell actually occupies, and
-    // then translated onto each cell by adding its center
+    // trial points are drawn uniformly in an orthorhombic box with the size of the swept region,
+    // wrapped by this tilted box onto the skewed shape a cell actually occupies, and then
+    // translated onto each cell by adding its center
     BoxDim draw_box(make_scalar3(width.x * global_L.x, width.y * global_L.y, width.z * global_L.z));
     draw_box.setTiltFactors(global_box.getTiltFactorXY(),
                             global_box.getTiltFactorXZ(),
@@ -80,7 +81,7 @@ void TriangulatedGeometryFiller::classifyCells()
                                         Scalar(0.5) * draw_box.getL().y,
                                         Scalar(0.5) * draw_box.getL().z);
 
-    // when not set by the user, use the mean number of solvent particles in the sampling region
+    // when not set by the user, use the mean number of solvent particles in the swept region
     // plus eight standard deviations of the Poisson distribution
     const Scalar mean_in_region = m_density * draw_box.getVolume();
     const unsigned int num_classify_trials
@@ -92,16 +93,19 @@ void TriangulatedGeometryFiller::classifyCells()
     uint16_t seed = m_sysdef->getSeed();
 
     const hoomd::detail::AABBTree& tree = m_geom->getTriangleTree();
-    ArrayHandle<ShortReal3> h_verts(m_geom->getVertices(),
-                                    access_location::host,
-                                    access_mode::read);
-    ArrayHandle<uint3> h_tris(m_geom->getTriangles(), access_location::host, access_mode::read);
+    ArrayHandle<ShortReal3> h_vertices(m_geom->getVertices(),
+                                       access_location::host,
+                                       access_mode::read);
+    ArrayHandle<uint3> h_triangles(m_geom->getTriangles(),
+                                   access_location::host,
+                                   access_mode::read);
 
-    // mark the cells that are cut by the mesh, record their candidate triangles, and track the
-    // largest count so that the lists can be stored in a uniform per-cell allocation
+    // find the cells that are cut by the surface, record the candidate triangles of each, and
+    // track the largest count so that the lists can be stored in a uniform per-cell allocation
     std::vector<unsigned int> marked;
     std::vector<unsigned int> counts;
-    std::vector<unsigned int> candidates;
+    std::vector<unsigned int> swept_cell_tris;
+    std::vector<unsigned int> cell_tris;
     std::vector<unsigned int> tri_indices;
     unsigned int max_tri_per_cell = 0;
     for (unsigned int k = 0; k < local_dim.z; ++k)
@@ -114,17 +118,18 @@ void TriangulatedGeometryFiller::classifyCells()
                 const int gj = static_cast<int>(j) + origin.y;
                 const int gk = static_cast<int>(k) + origin.z;
 
-                const hoomd::detail::AABB aabb
-                    = computeSweptCellAABB(gi, gj, gk, inv_dim, max_shift, global_box);
-                candidates.clear();
-                tree.query(candidates, aabb);
+                // find triangles in the swept region
+                swept_cell_tris.clear();
+                tree.query(swept_cell_tris,
+                           computeCellAABB(gi, gj, gk, inv_dim, max_shift, global_box));
 
-                // skip cells that no triangles can reach under grid shifting
-                if (candidates.empty())
+                // skip cells if no triangles are found
+                if (swept_cell_tris.empty())
                     {
                     continue;
                     }
-                const unsigned int num_candidates = static_cast<unsigned int>(candidates.size());
+                const unsigned int num_candidates
+                    = static_cast<unsigned int>(swept_cell_tris.size());
 
                 // cell center in Cartesian coordinates
                 const Scalar3 f_center = make_scalar3((gi + Scalar(0.5)) * inv_dim.x,
@@ -151,7 +156,7 @@ void TriangulatedGeometryFiller::classifyCells()
                     draw_box.wrap(point, img);
                     point += cell_center;
 
-                    // cells at the edge of the box have a sampling region that overhangs the
+                    // cells at the edge of the box have a swept region that overhangs the
                     // global box, so trial points can land outside it. The geometry is assumed
                     // to lie inside the global box, so these points are discarded.
                     const Scalar3 f = global_box.makeFraction(point);
@@ -162,10 +167,10 @@ void TriangulatedGeometryFiller::classifyCells()
                         }
 
                     const bool is_outside = isOutside(point,
-                                                      candidates.data(),
+                                                      swept_cell_tris.data(),
                                                       num_candidates,
-                                                      h_verts.data,
-                                                      h_tris.data);
+                                                      h_vertices.data,
+                                                      h_triangles.data);
 
                     if (code == 0)
                         {
@@ -182,18 +187,39 @@ void TriangulatedGeometryFiller::classifyCells()
                         }
                     }
 
-                if (is_cut)
+                if (!is_cut)
                     {
-                    marked.push_back(ci(i, j, k));
-                    counts.push_back(num_candidates);
-                    tri_indices.insert(tri_indices.end(), candidates.begin(), candidates.end());
-                    max_tri_per_cell = std::max(max_tri_per_cell, num_candidates);
+                    continue;
                     }
+
+                // only the triangles whose AABBs overlap the actual cell are stored as the
+                // candidates for the inside/outside test
+                cell_tris.clear();
+                tree.query(cell_tris,
+                           computeCellAABB(gi, gj, gk, inv_dim, make_scalar3(0, 0, 0), global_box));
+
+                // a cut cell with no candidate triangle lies entirely on one side of the surface.
+                // It is filled without testing if its center is outside the fluid, and dropped
+                // otherwise
+                if (cell_tris.empty()
+                    && !isOutside(cell_center,
+                                  swept_cell_tris.data(),
+                                  num_candidates,
+                                  h_vertices.data,
+                                  h_triangles.data))
+                    {
+                    continue;
+                    }
+
+                const unsigned int num_cell_tris = static_cast<unsigned int>(cell_tris.size());
+                marked.push_back(ci(i, j, k));
+                counts.push_back(num_cell_tris);
+                tri_indices.insert(tri_indices.end(), cell_tris.begin(), cell_tris.end());
+                max_tri_per_cell = std::max(max_tri_per_cell, num_cell_tris);
                 }
             }
         }
 
-    // allocate the uniform per-cell storage now that the largest count is known
     m_num_fill_cells = static_cast<unsigned int>(marked.size());
     m_max_tri_per_cell = max_tri_per_cell;
     if (m_num_fill_cells > m_fill_cells.getNumElements())
@@ -210,7 +236,7 @@ void TriangulatedGeometryFiller::classifyCells()
         m_tri_list.swap(tri_list);
         }
 
-    // store the candidate list of each fill cell in its own block of m_max_tri_per_cell entries
+    // store the candidate triangles of each fill cell in its own block of m_max_tri_per_cell
     if (m_num_fill_cells > 0)
         {
         ArrayHandle<unsigned int> h_fill_cells(m_fill_cells,
@@ -266,9 +292,9 @@ void TriangulatedGeometryFiller::fill(uint64_t timestep)
                                          Scalar(1.0) / global_dim.y,
                                          Scalar(1.0) / global_dim.z);
 
-    // particles are drawn in the cell itself rather than in the region swept out by grid shifting,
-    // so this box carries the cell width and the tilt of the global box. It is centered on the
-    // origin, and a particle is placed by translating onto the center of its cell
+    // particles are drawn in the cell itself rather than in the swept region, so this box carries
+    // the cell width and the tilt of the global box. It is centered on the origin, and a particle
+    // is placed by translating onto the center of its cell
     BoxDim draw_box(
         make_scalar3(inv_dim.x * global_L.x, inv_dim.y * global_L.y, inv_dim.z * global_L.z));
     draw_box.setTiltFactors(global_box.getTiltFactorXY(),
@@ -324,10 +350,12 @@ void TriangulatedGeometryFiller::fill(uint64_t timestep)
                                                      access_location::host,
                                                      access_mode::read);
         ArrayHandle<unsigned int> h_tri_list(m_tri_list, access_location::host, access_mode::read);
-        ArrayHandle<ShortReal3> h_verts(m_geom->getVertices(),
-                                        access_location::host,
-                                        access_mode::read);
-        ArrayHandle<uint3> h_tris(m_geom->getTriangles(), access_location::host, access_mode::read);
+        ArrayHandle<ShortReal3> h_vertices(m_geom->getVertices(),
+                                           access_location::host,
+                                           access_mode::read);
+        ArrayHandle<uint3> h_triangles(m_geom->getTriangles(),
+                                       access_location::host,
+                                       access_mode::read);
 
         num_selected = 0;
         for (unsigned int n = 0; n < m_num_fill_cells; ++n)
@@ -369,7 +397,13 @@ void TriangulatedGeometryFiller::fill(uint64_t timestep)
                 draw_box.wrap(particle, img);
                 particle += cell_center;
 
-                if (isOutside(particle, cell_tris, num_cell_tris, h_verts.data, h_tris.data))
+                // a cell with no candidate triangle was classified as outside
+                if (num_cell_tris == 0
+                    || isOutside(particle,
+                                 cell_tris,
+                                 num_cell_tris,
+                                 h_vertices.data,
+                                 h_triangles.data))
                     {
                     h_tmp_pos.data[num_selected]
                         = make_scalar4(particle.x, particle.y, particle.z, __int_as_scalar(m_type));
