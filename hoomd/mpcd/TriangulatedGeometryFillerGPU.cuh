@@ -11,7 +11,7 @@
 
 #include <vector>
 
-#include <hip/hip_runtime.h>
+#include <cuda_runtime.h>
 
 #include "RejectionVirtualParticleFillerGPU.cuh"
 #include "TriangulatedGeometry.h"
@@ -80,7 +80,7 @@ class CellLBVHTraverserWrapper
     ~CellLBVHTraverserWrapper();
 
     //! Setup the LBVH traverser
-    void setup(neighbor::LBVH& lbvh, hipStream_t stream);
+    void setup(neighbor::LBVH& lbvh, cudaStream_t stream);
 
     //! Traverse the LBVH
     void traverse(const triangulated_classify_cells_args_t& args,
@@ -92,7 +92,7 @@ class CellLBVHTraverserWrapper
                   bool* d_candidate_flags,
                   unsigned int* d_max_tri_per_cell,
                   neighbor::LBVH& lbvh,
-                  hipStream_t stream,
+                  cudaStream_t stream,
                   unsigned int block_size);
 
     //! Get the list of tunable parameters
@@ -102,41 +102,41 @@ class CellLBVHTraverserWrapper
     neighbor::LBVHTraverser* trav_; //!< Underlying neighbor::LBVHTraverser
     };
 
-hipError_t triangulated_classify_cells(const triangulated_classify_cells_args_t& args,
-                                       bool* d_cut_flags,
-                                       bool* d_center_outside,
-                                       const unsigned int* d_tri_list,
-                                       const unsigned int* d_num_tri_per_cell,
-                                       unsigned int max_tri_per_cell,
-                                       const unsigned int* d_candidate_cells,
-                                       unsigned int num_candidate_cells,
-                                       const ShortReal3* d_vertices,
-                                       const uint3* d_triangles,
-                                       unsigned int block_size);
-
-hipError_t triangulated_flag_fill_cells(bool* d_fill_flags,
+cudaError_t triangulated_classify_cells(const triangulated_classify_cells_args_t& args,
+                                        bool* d_cut_flags,
+                                        bool* d_center_outside,
+                                        const unsigned int* d_tri_list,
                                         const unsigned int* d_num_tri_per_cell,
-                                        const unsigned int* d_cut_candidates,
-                                        const bool* d_center_outside,
-                                        unsigned int num_cut_cells,
+                                        unsigned int max_tri_per_cell,
+                                        const unsigned int* d_candidate_cells,
+                                        unsigned int num_candidate_cells,
+                                        const ShortReal3* d_vertices,
+                                        const uint3* d_triangles,
                                         unsigned int block_size);
 
-hipError_t compact_flagged_cells(void* d_tmp,
-                                 size_t& tmp_bytes,
-                                 const bool* d_flags,
-                                 const unsigned int* d_cells,
-                                 unsigned int num_cells,
-                                 unsigned int* d_out_cells,
-                                 unsigned int* d_out_indices,
-                                 unsigned int* d_num_out);
+cudaError_t triangulated_flag_fill_cells(bool* d_fill_flags,
+                                         const unsigned int* d_num_tri_per_cell,
+                                         const unsigned int* d_cut_candidates,
+                                         const bool* d_center_outside,
+                                         unsigned int num_cut_cells,
+                                         unsigned int block_size);
 
-hipError_t triangulated_draw_virtual_particles(const draw_virtual_particles_args_t& args,
-                                               const unsigned int* d_fill_candidates,
-                                               const unsigned int* d_tri_list,
-                                               const unsigned int* d_num_tri_per_cell,
-                                               unsigned int max_tri_per_cell,
-                                               const ShortReal3* d_vertices,
-                                               const uint3* d_triangles);
+cudaError_t compact_flagged_cells(void* d_tmp,
+                                  size_t& tmp_bytes,
+                                  const bool* d_flags,
+                                  const unsigned int* d_cells,
+                                  unsigned int num_cells,
+                                  unsigned int* d_out_cells,
+                                  unsigned int* d_out_indices,
+                                  unsigned int* d_num_out);
+
+cudaError_t triangulated_draw_virtual_particles(const draw_virtual_particles_args_t& args,
+                                                const unsigned int* d_fill_candidates,
+                                                const unsigned int* d_tri_list,
+                                                const unsigned int* d_num_tri_per_cell,
+                                                unsigned int max_tri_per_cell,
+                                                const ShortReal3* d_vertices,
+                                                const uint3* d_triangles);
     } // end namespace gpu
     } // end namespace mpcd
     } // end namespace hoomd

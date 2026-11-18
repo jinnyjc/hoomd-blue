@@ -10,7 +10,7 @@
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wconversion"
-#include <hipcub/hipcub.hpp>
+#include <cub/cub.cuh>
 #pragma GCC diagnostic pop
 
 #include <neighbor/neighbor.h>
@@ -69,7 +69,7 @@ struct PathQueryOp
         };
 
     // Traversal volume type used by neighbor::LBVHTraverser
-    typedef neighbor::BoundingBox Volume;
+    using Volume = neighbor::BoundingBox;
 
     //! Loads the per-thread data
     /*!
@@ -429,22 +429,22 @@ struct CollisionOutputOp
     };
 
 //! Driver function implementations
-hipError_t triangulated_compact_active(void* cub_tmp,
-                                       size_t& cub_tmp_bytes,
-                                       unsigned int* d_active_idx,
-                                       unsigned int* d_next_active_idx,
-                                       unsigned int* d_flags,
-                                       unsigned int* d_num_active,
-                                       unsigned int num_active)
+cudaError_t triangulated_compact_active(void* cub_tmp,
+                                        size_t& cub_tmp_bytes,
+                                        unsigned int* d_active_idx,
+                                        unsigned int* d_next_active_idx,
+                                        unsigned int* d_flags,
+                                        unsigned int* d_num_active,
+                                        unsigned int num_active)
     {
-    hipcub::DevicePartition::Flagged(cub_tmp,
-                                     cub_tmp_bytes,
-                                     d_active_idx,
-                                     d_flags,
-                                     d_next_active_idx,
-                                     d_num_active,
-                                     num_active);
-    return hipSuccess;
+    cub::DevicePartition::Flagged(cub_tmp,
+                                  cub_tmp_bytes,
+                                  d_active_idx,
+                                  d_flags,
+                                  d_next_active_idx,
+                                  d_num_active,
+                                  num_active);
+    return cudaSuccess;
     }
 
 /*!
@@ -466,7 +466,7 @@ PathLBVHTraverserWrapper::~PathLBVHTraverserWrapper()
  *
  * A NullTransformOp is used as the LBVH primitive order is the triangle order.
  */
-void PathLBVHTraverserWrapper::setup(neighbor::LBVH& lbvh, hipStream_t stream)
+void PathLBVHTraverserWrapper::setup(neighbor::LBVH& lbvh, cudaStream_t stream)
     {
     neighbor::NullTransformOp transform;
     trav_->setup(stream, lbvh, transform);
@@ -497,7 +497,7 @@ void PathLBVHTraverserWrapper::traverse(const triangulated_stream_args_t& args,
                                         unsigned int num_active,
                                         bool no_slip,
                                         neighbor::LBVH& lbvh,
-                                        hipStream_t stream,
+                                        cudaStream_t stream,
                                         unsigned int block_size)
     {
     PathQueryOp query(args.d_pos, args.d_vel, d_dt_remain, d_active_idx, num_active);
@@ -509,7 +509,7 @@ void PathLBVHTraverserWrapper::traverse(const triangulated_stream_args_t& args,
                              d_dt_remain,
                              d_flags,
                              no_slip,
-                             Scalar(1e-12));
+                             mpcd::detail::TRIANGLE_INTERSECTION_TOLERANCE);
 
     neighbor::NullTransformOp transform;
     neighbor::SelfOp translate;

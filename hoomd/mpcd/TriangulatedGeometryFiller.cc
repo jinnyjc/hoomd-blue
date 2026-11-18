@@ -14,6 +14,55 @@ namespace hoomd
     {
 namespace mpcd
     {
+//! Compute the Cartesian AABB of a cell grown by a fractional margin on both sides
+/*!
+ * \param gi Global cell index along x
+ * \param gj Global cell index along y
+ * \param gk Global cell index along z
+ * \param inv_dim Fractional width of one cell along each lattice vector
+ * \param margin Fractional margin added on both sides of the cell
+ * \param global_box Global simulation box
+ * \returns Axis-aligned bounding box of the grown cell
+ *
+ * The cell is grown by \a margin on both sides before its corners are converted to Cartesian
+ * coordinates. Passing the maximum grid shift gives the AABB of the swept region, and
+ * passing zero gives the AABB of the cell itself.
+ */
+static hoomd::detail::AABB computeCellAABB(int gi,
+                                           int gj,
+                                           int gk,
+                                           const Scalar3& inv_dim,
+                                           const Scalar3& margin,
+                                           const BoxDim& global_box)
+    {
+    const Scalar3 f_lo = make_scalar3(gi * inv_dim.x - margin.x,
+                                      gj * inv_dim.y - margin.y,
+                                      gk * inv_dim.z - margin.z);
+    const Scalar3 f_hi = make_scalar3((gi + 1) * inv_dim.x + margin.x,
+                                      (gj + 1) * inv_dim.y + margin.y,
+                                      (gk + 1) * inv_dim.z + margin.z);
+
+    // bounding box of the two diagonal corners, extended by the skew so that tilted
+    // boxes are handled
+    Scalar3 lower = global_box.makeCoordinates(f_lo);
+    Scalar3 upper = global_box.makeCoordinates(f_hi);
+
+    const Scalar3 L = global_box.getL();
+    const Scalar dy = (f_hi.y - f_lo.y) * L.y;
+    const Scalar dz = (f_hi.z - f_lo.z) * L.z;
+    const Scalar skew_x = std::min(global_box.getTiltFactorXY() * dy, Scalar(0.0))
+                          + std::min(global_box.getTiltFactorXZ() * dz, Scalar(0.0));
+    const Scalar skew_y = std::min(global_box.getTiltFactorYZ() * dz, Scalar(0.0));
+
+    lower.x += skew_x;
+    upper.x -= skew_x;
+    lower.y += skew_y;
+    upper.y -= skew_y;
+
+    return hoomd::detail::AABB(vec3<Scalar>(lower.x, lower.y, lower.z),
+                               vec3<Scalar>(upper.x, upper.y, upper.z));
+    }
+
 TriangulatedGeometryFiller::TriangulatedGeometryFiller(
     std::shared_ptr<SystemDefinition> sysdef,
     const std::string& type,
@@ -93,6 +142,7 @@ void TriangulatedGeometryFiller::classifyCells()
     uint16_t seed = m_sysdef->getSeed();
 
     const hoomd::detail::AABBTree& tree = m_geom->getTriangleTree();
+    const std::vector<hoomd::detail::AABB>& triangle_aabbs = m_geom->getTriangleAABBs();
     ArrayHandle<ShortReal3> h_vertices(m_geom->getVertices(),
                                        access_location::host,
                                        access_mode::read);
@@ -194,9 +244,16 @@ void TriangulatedGeometryFiller::classifyCells()
 
                 // only the triangles whose AABBs overlap the actual cell are stored as the
                 // candidates for the inside/outside test
+                const hoomd::detail::AABB cell_aabb
+                    = computeCellAABB(gi, gj, gk, inv_dim, make_scalar3(0, 0, 0), global_box);
                 cell_tris.clear();
-                tree.query(cell_tris,
-                           computeCellAABB(gi, gj, gk, inv_dim, make_scalar3(0, 0, 0), global_box));
+                for (const auto cur_tri : swept_cell_tris)
+                    {
+                    if (cell_aabb.overlaps(triangle_aabbs[cur_tri]))
+                        {
+                        cell_tris.push_back(cur_tri);
+                        }
+                    }
 
                 // a cut cell with no candidate triangle lies entirely on one side of the surface.
                 // It is filled without testing if its center is outside the fluid, and dropped

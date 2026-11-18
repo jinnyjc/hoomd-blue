@@ -130,61 +130,6 @@ class PYBIND11_EXPORT TriangulatedGeometryFiller : public mpcd::VirtualParticleF
 
     //! Determine which cells need virtual particles and store their triangles
     virtual void classifyCells();
-
-    //! Compute the Cartesian AABB of a cell grown by a fractional margin on both sides
-    /*!
-     * \param gi Global cell index along x
-     * \param gj Global cell index along y
-     * \param gk Global cell index along z
-     * \param inv_dim Fractional width of one cell along each lattice vector
-     * \param margin Fractional margin added on both sides of the cell
-     * \param global_box Global simulation box
-     * \returns Axis-aligned bounding box of the grown cell
-     *
-     * The cell is grown by \a margin on both sides before its corners are converted to Cartesian
-     * coordinates. Passing the maximum grid shift gives the AABB of the swept region, and
-     * passing zero gives the AABB of the cell itself.
-     */
-    hoomd::detail::AABB computeCellAABB(int gi,
-                                        int gj,
-                                        int gk,
-                                        const Scalar3& inv_dim,
-                                        const Scalar3& margin,
-                                        const BoxDim& global_box) const
-        {
-        const Scalar3 f_lo = make_scalar3(gi * inv_dim.x - margin.x,
-                                          gj * inv_dim.y - margin.y,
-                                          gk * inv_dim.z - margin.z);
-        const Scalar3 f_hi = make_scalar3((gi + 1) * inv_dim.x + margin.x,
-                                          (gj + 1) * inv_dim.y + margin.y,
-                                          (gk + 1) * inv_dim.z + margin.z);
-
-        // take the bounding box of the 8 corners so that tilted boxes are handled
-        Scalar3 lower = global_box.makeCoordinates(f_lo);
-        Scalar3 upper = lower;
-        for (int cx = 0; cx < 2; ++cx)
-            {
-            for (int cy = 0; cy < 2; ++cy)
-                {
-                for (int cz = 0; cz < 2; ++cz)
-                    {
-                    const Scalar3 f = make_scalar3(cx ? f_hi.x : f_lo.x,
-                                                   cy ? f_hi.y : f_lo.y,
-                                                   cz ? f_hi.z : f_lo.z);
-                    const Scalar3 r = global_box.makeCoordinates(f);
-                    lower.x = std::min(lower.x, r.x);
-                    lower.y = std::min(lower.y, r.y);
-                    lower.z = std::min(lower.z, r.z);
-                    upper.x = std::max(upper.x, r.x);
-                    upper.y = std::max(upper.y, r.y);
-                    upper.z = std::max(upper.z, r.z);
-                    }
-                }
-            }
-
-        return hoomd::detail::AABB(vec3<Scalar>(lower.x, lower.y, lower.z),
-                                   vec3<Scalar>(upper.x, upper.y, upper.z));
-        }
     };
 
 namespace detail

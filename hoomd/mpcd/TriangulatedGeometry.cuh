@@ -11,7 +11,7 @@
 
 #include <vector>
 
-#include <hip/hip_runtime.h>
+#include <cuda_runtime.h>
 
 #include "hoomd/HOOMDMath.h"
 
@@ -46,7 +46,7 @@ class TriangleLBVHWrapper
     void setup(const ShortReal3* vertices,
                const uint3* triangles,
                unsigned int num_triangles,
-               hipStream_t stream);
+               cudaStream_t stream);
 
     //! Build the LBVH
     void build(const ShortReal3* vertices,
@@ -54,7 +54,7 @@ class TriangleLBVHWrapper
                unsigned int num_triangles,
                const Scalar3& lo,
                const Scalar3& hi,
-               hipStream_t stream,
+               cudaStream_t stream,
                unsigned int block_size);
 
     //! Get underlying LBVH

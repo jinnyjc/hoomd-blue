@@ -122,24 +122,41 @@ class VirtualParticleFiller(Operation):
 
 
 class GeometryFiller(VirtualParticleFiller):
-    """Virtual-particle filler for a bounce-back geometry.
+    r"""Virtual-particle filler for a bounce-back geometry.
 
     Args:
         type (str): Type of particles to fill.
         density (float): Particle number density.
         kT (hoomd.variant.variant_like): Temperature of particles.
         geometry (hoomd.mpcd.geometry.Geometry): Surface to fill around.
-        num_classify_trials (int): Trial points drawn per collision cell when
-            determining which cells need to be filled, or `None` to determine
-            it from `density`.
+        num_classify_trials (int): Number of trial points drawn per collision
+            cell for classification, or 0 to determine it from `density`.
 
     Virtual particles are inserted in cells whose volume is sliced by the
-    specified `geometry`. The algorithm for doing the filling depends on the
-    specific `geometry`.
+    specified `geometry`. The filling is done in two steps.
 
-    Those fillers first determine which collision cells can possibly contain
-    both fluid and solid, then draw virtual particles only in those cells.
-    The classification is performed once and repeated only if the box changes.
+    First, the cells are classified. The collision cells can be shifted, so
+    each cell is tested in the region it can occupy under grid shifting, which
+    is the cell extended by the maximum grid shift on both sides along each
+    direction. Up to `num_classify_trials` points are drawn uniformly at random
+    in this region. A cell is filled only if trial points are found in both the
+    fluid and the solid. A cell whose trial points are all in the fluid needs no
+    virtual particles, and a cell whose trial points are all in the solid can never
+    share a collision cell with the fluid. The classification is performed once
+    and repeated only if the box changes.
+
+    Second, virtual particles are drawn in each cell that needs filling. The number
+    of particles :math:`N` drawn in a cell is Poisson distributed,
+
+    .. math::
+
+        P(N) = \frac{\lambda^N e^{-\lambda}}{N!}, \qquad
+        \lambda = \rho V_{\rm c}
+
+    where :math:`\rho` is the `density` and :math:`V_{\rm c}` is the volume of
+    one collision cell, so :math:`N` has mean :math:`\lambda` and standard
+    deviation :math:`\sqrt{\lambda}`. The particles are placed uniformly at
+    random within the cell, and only the ones that lie in the solid are kept.
 
     .. rubric:: Example:
 
@@ -161,11 +178,20 @@ class GeometryFiller(VirtualParticleFiller):
         geometry (hoomd.mpcd.geometry.Geometry): Surface to fill around
             (*read only*).
 
-        num_classify_trials (int): Trial points drawn per collision cell when
-            determining which cells need to be filled (*read only*).
+        num_classify_trials (int): Number of trial points drawn per collision cell
+            for classification (*read only*).
 
-            If `None`, the number is chosen as the mean number of solvent particles
-            in the classification region plus eight standard deviations.
+            If 0, the number is chosen as the mean number of solvent particles
+            in the classification region plus eight standard deviations of the
+            Poisson distribution,
+
+            .. math::
+
+                N_{\rm t} = \left\lceil \rho V_{\rm s}
+                            + 8 \sqrt{\rho V_{\rm s}} \right\rceil
+
+            where :math:`\rho` is the `density` and :math:`V_{\rm s}` is the
+            volume of the classification region of one cell.
 
     """
 
@@ -174,7 +200,7 @@ class GeometryFiller(VirtualParticleFiller):
     )
     _cpp_class_map = {}
 
-    def __init__(self, type, density, kT, geometry, num_classify_trials=None):
+    def __init__(self, type, density, kT, geometry, num_classify_trials=0):
         super().__init__(type, density, kT)
 
         param_dict = ParameterDict(
@@ -182,13 +208,11 @@ class GeometryFiller(VirtualParticleFiller):
         )
         param_dict["geometry"] = geometry
         self._param_dict.update(param_dict)
-        self._num_classify_trials = int(
-            num_classify_trials if num_classify_trials is not None else 0
-        )
+        self._num_classify_trials = int(num_classify_trials)
 
     @property
     def num_classify_trials(self):
-        """int: Trial points drawn per collision cell during classification."""
+        """int: Number of trial points drawn per collision cell for classification."""
         return self._num_classify_trials
 
     def _attach_hook(self):
@@ -237,17 +261,17 @@ class TriangulatedGeometryFiller(VirtualParticleFiller):
         density (float): Particle number density.
         kT (hoomd.variant.variant_like): Temperature of particles.
         geometry (hoomd.mpcd.geometry.TriangulatedGeometry): Surface to fill around.
-        num_classify_trials (int): Trial points drawn per collision cell when
-            determining which cells need to be filled, or `None` to determine
-            it from `density`.
+        num_classify_trials (int): Number of trial points drawn per collision
+            cell for classification, or 0 to determine it from `density`.
 
-    Virtual particles are inserted in cells whose volume is sliced by the
-    triangulated mesh. The filler first determines which cells can contain both
-    fluid and solid and stores the triangles near each of them, then draws
-    virtual particles only in those cells. A drawn particle is kept if it lies
-    on the side of the nearest triangle that its normal points to, so the
-    triangles must be wound so that their normals point out of the fluid. The
-    classification is performed once and repeated only if the box changes.
+    Virtual particles are inserted in the collision cells that are sliced by
+    the triangulated geometry. The cells are classified and the virtual particles
+    are distributed in the same way as for `GeometryFiller`, and the triangles
+    near each cell that needs filling are stored during classification. A trial
+    point or drawn particle is in the solid if it lies on the side of the nearest
+    triangle that its normal points to, so the triangles must be wound so that
+    their normals point out of the fluid. The classification is performed once
+    and repeated only if the box changes.
 
     .. rubric:: Example:
 
@@ -275,11 +299,10 @@ class TriangulatedGeometryFiller(VirtualParticleFiller):
         geometry (hoomd.mpcd.geometry.TriangulatedGeometry): Surface to fill around
             (*read only*).
 
-        num_classify_trials (int): Trial points drawn per collision cell when
-            determining which cells need to be filled (*read only*).
+        num_classify_trials (int): Number of trial points drawn per collision
+            cell for classification (*read only*).
 
-            If `None`, the number is chosen as the mean number of solvent particles
-            in the classification region plus eight standard deviations.
+            If 0, the number is chosen in the same way as for `GeometryFiller`.
 
     """
 
@@ -287,16 +310,14 @@ class TriangulatedGeometryFiller(VirtualParticleFiller):
         "{inherited}", inspect.cleandoc(VirtualParticleFiller._doc_inherited)
     )
 
-    def __init__(self, type, density, kT, geometry, num_classify_trials=None):
+    def __init__(self, type, density, kT, geometry, num_classify_trials=0):
         super().__init__(type, density, kT)
 
         if not isinstance(geometry, TriangulatedGeometry):
             raise TypeError("Geometry must be a TriangulatedGeometry")
 
         self._geometry = geometry
-        self._num_classify_trials = int(
-            num_classify_trials if num_classify_trials is not None else 0
-        )
+        self._num_classify_trials = int(num_classify_trials)
 
     @property
     def geometry(self):
@@ -305,7 +326,7 @@ class TriangulatedGeometryFiller(VirtualParticleFiller):
 
     @property
     def num_classify_trials(self):
-        """int: Trial points drawn per collision cell during classification."""
+        """int: Number of trial points drawn per collision cell for classification."""
         return self._num_classify_trials
 
     def _attach_hook(self):

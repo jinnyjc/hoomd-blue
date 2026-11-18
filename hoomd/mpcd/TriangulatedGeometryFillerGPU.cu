@@ -10,7 +10,7 @@
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wconversion"
-#include <hipcub/hipcub.hpp>
+#include <cub/cub.cuh>
 #pragma GCC diagnostic pop
 #include <thrust/iterator/counting_iterator.h>
 
@@ -55,7 +55,7 @@ struct CellQueryOp
         };
 
     // Traversal volume type used by neighbor::LBVHTraverser
-    typedef neighbor::BoundingBox Volume;
+    using Volume = neighbor::BoundingBox;
 
     //! Loads the per-thread data
     /*!
@@ -90,28 +90,23 @@ struct CellQueryOp
                                           (gj + 1) * args.inv_dim.y + args.max_shift.y,
                                           (gk + 1) * args.inv_dim.z + args.max_shift.z);
 
-        // take the bounding box of the 8 corners so that tilted boxes are handled
+        // bounding box of the two diagonal corners, extended by the skew so that tilted
+        // boxes are handled
         Scalar3 lower = args.global_box.makeCoordinates(f_lo);
-        Scalar3 upper = lower;
-        for (int cx = 0; cx < 2; ++cx)
-            {
-            for (int cy = 0; cy < 2; ++cy)
-                {
-                for (int cz = 0; cz < 2; ++cz)
-                    {
-                    const Scalar3 f = make_scalar3(cx ? f_hi.x : f_lo.x,
-                                                   cy ? f_hi.y : f_lo.y,
-                                                   cz ? f_hi.z : f_lo.z);
-                    const Scalar3 r = args.global_box.makeCoordinates(f);
-                    lower.x = min(lower.x, r.x);
-                    lower.y = min(lower.y, r.y);
-                    lower.z = min(lower.z, r.z);
-                    upper.x = max(upper.x, r.x);
-                    upper.y = max(upper.y, r.y);
-                    upper.z = max(upper.z, r.z);
-                    }
-                }
-            }
+        Scalar3 upper = args.global_box.makeCoordinates(f_hi);
+
+        const Scalar3 L = args.global_box.getL();
+        const Scalar dy = (f_hi.y - f_lo.y) * L.y;
+        const Scalar dz = (f_hi.z - f_lo.z) * L.z;
+        const Scalar skew_x = min(args.global_box.getTiltFactorXY() * dy, Scalar(0.0))
+                              + min(args.global_box.getTiltFactorXZ() * dz, Scalar(0.0));
+        const Scalar skew_y = min(args.global_box.getTiltFactorYZ() * dz, Scalar(0.0));
+
+        lower.x += skew_x;
+        upper.x -= skew_x;
+        lower.y += skew_y;
+        upper.y -= skew_y;
+
         return neighbor::BoundingBox(lower, upper);
         }
 
@@ -265,7 +260,7 @@ CellLBVHTraverserWrapper::~CellLBVHTraverserWrapper()
  *
  * A NullTransformOp is used as the LBVH primitive order is the triangle order.
  */
-void CellLBVHTraverserWrapper::setup(neighbor::LBVH& lbvh, hipStream_t stream)
+void CellLBVHTraverserWrapper::setup(neighbor::LBVH& lbvh, cudaStream_t stream)
     {
     neighbor::NullTransformOp transform;
     trav_->setup(stream, lbvh, transform);
@@ -297,7 +292,7 @@ void CellLBVHTraverserWrapper::traverse(const triangulated_classify_cells_args_t
                                         bool* d_candidate_flags,
                                         unsigned int* d_max_tri_per_cell,
                                         neighbor::LBVH& lbvh,
-                                        hipStream_t stream,
+                                        cudaStream_t stream,
                                         unsigned int block_size)
     {
     CellQueryOp query(args, d_cells, num_cells);
@@ -568,27 +563,28 @@ __global__ void triangulated_draw_virtual_particles(Scalar4* d_tmp_pos,
         hoomd::Seed(hoomd::RNGIdentifier::VirtualParticleFiller, timestep, seed),
         hoomd::Counter(wrappedCellIndex(gi, gj, gk, global_dim), filler_id, 1));
 
-    unsigned int num_in_cell = hoomd::PoissonDistribution<Scalar>(mean_per_cell)(rng_cell);
+    const unsigned int num_in_cell = hoomd::PoissonDistribution<Scalar>(mean_per_cell)(rng_cell);
     if (num_in_cell > max_per_cell)
         {
-        // report the overflow for reallocation
+        // report the overflow for reallocation. the whole fill is redone with larger arrays, so
+        // nothing is drawn for this cell
         if (offset == 0)
             {
             atomicMax(d_max_observed, num_in_cell);
             }
-        num_in_cell = 0;
+        return;
         }
 
     hoomd::RandomGenerator rng(
         hoomd::Seed(hoomd::RNGIdentifier::VirtualParticleFiller, timestep, seed),
         hoomd::Counter(wrappedCellIndex(gi, gj, gk, global_dim), filler_id, 2 + offset));
 
-    const unsigned int base = n * max_per_cell;
-    for (unsigned int p = offset; p < max_per_cell; p += threads_per_cell)
+    for (unsigned int p = offset, pidx = n * max_per_cell + offset; p < max_per_cell;
+         p += threads_per_cell, pidx += threads_per_cell)
         {
         if (p >= num_in_cell)
             {
-            d_keep_particles[base + p] = false;
+            d_keep_particles[pidx] = false;
             continue;
             }
         Scalar3 pos = make_scalar3(hoomd::UniformDistribution<Scalar>(-half_w.x, half_w.x)(rng),
@@ -603,19 +599,18 @@ __global__ void triangulated_draw_virtual_particles(Scalar4* d_tmp_pos,
         const bool is_outside
             = (num_cell_tris == 0)
               || isOutside(pos, cell_tris, num_cell_tris, d_vertices, d_triangles);
-        d_keep_particles[base + p] = is_outside;
+        d_keep_particles[pidx] = is_outside;
 
         if (!is_outside)
             continue;
 
-        d_tmp_pos[base + p] = make_scalar4(pos.x, pos.y, pos.z, __int_as_scalar(type));
+        d_tmp_pos[pidx] = make_scalar4(pos.x, pos.y, pos.z, __int_as_scalar(type));
 
         hoomd::NormalDistribution<Scalar> gen(vel_factor, 0.0);
         Scalar3 vel;
         gen(vel.x, vel.y, rng);
         vel.z = gen(rng);
-        d_tmp_vel[base + p]
-            = make_scalar4(vel.x, vel.y, vel.z, __int_as_scalar(mpcd::detail::NO_CELL));
+        d_tmp_vel[pidx] = make_scalar4(vel.x, vel.y, vel.z, __int_as_scalar(mpcd::detail::NO_CELL));
         }
     }
     } // end namespace kernel
@@ -635,50 +630,46 @@ __global__ void triangulated_draw_virtual_particles(Scalar4* d_tmp_pos,
  *
  * \sa mpcd::gpu::kernel::triangulated_classify_cells
  */
-hipError_t triangulated_classify_cells(const triangulated_classify_cells_args_t& args,
-                                       bool* d_cut_flags,
-                                       bool* d_center_outside,
-                                       const unsigned int* d_tri_list,
-                                       const unsigned int* d_num_tri_per_cell,
-                                       unsigned int max_tri_per_cell,
-                                       const unsigned int* d_candidate_cells,
-                                       unsigned int num_candidate_cells,
-                                       const ShortReal3* d_vertices,
-                                       const uint3* d_triangles,
-                                       unsigned int block_size)
+cudaError_t triangulated_classify_cells(const triangulated_classify_cells_args_t& args,
+                                        bool* d_cut_flags,
+                                        bool* d_center_outside,
+                                        const unsigned int* d_tri_list,
+                                        const unsigned int* d_num_tri_per_cell,
+                                        unsigned int max_tri_per_cell,
+                                        const unsigned int* d_candidate_cells,
+                                        unsigned int num_candidate_cells,
+                                        const ShortReal3* d_vertices,
+                                        const uint3* d_triangles,
+                                        unsigned int block_size)
     {
     if (num_candidate_cells == 0)
-        return hipSuccess;
+        return cudaSuccess;
 
-    hipFuncAttributes attr;
-    hipFuncGetAttributes(&attr, reinterpret_cast<const void*>(kernel::triangulated_classify_cells));
+    cudaFuncAttributes attr;
+    cudaFuncGetAttributes(&attr, (const void*)kernel::triangulated_classify_cells);
     const unsigned int max_block_size = attr.maxThreadsPerBlock;
 
     const unsigned int run_block_size = min(block_size, max_block_size);
-    hipLaunchKernelGGL(kernel::triangulated_classify_cells,
-                       dim3(num_candidate_cells / run_block_size + 1),
-                       dim3(run_block_size),
-                       0,
-                       0,
-                       d_cut_flags,
-                       d_center_outside,
-                       d_tri_list,
-                       d_num_tri_per_cell,
-                       max_tri_per_cell,
-                       d_candidate_cells,
-                       num_candidate_cells,
-                       d_vertices,
-                       d_triangles,
-                       args.global_box,
-                       args.draw_box,
-                       args.ci,
-                       args.global_dim,
-                       args.origin,
-                       args.inv_dim,
-                       args.num_classify_trials,
-                       args.seed,
-                       args.filler_id);
-    return hipSuccess;
+    dim3 grid(num_candidate_cells / run_block_size + 1);
+    kernel::triangulated_classify_cells<<<grid, run_block_size>>>(d_cut_flags,
+                                                                  d_center_outside,
+                                                                  d_tri_list,
+                                                                  d_num_tri_per_cell,
+                                                                  max_tri_per_cell,
+                                                                  d_candidate_cells,
+                                                                  num_candidate_cells,
+                                                                  d_vertices,
+                                                                  d_triangles,
+                                                                  args.global_box,
+                                                                  args.draw_box,
+                                                                  args.ci,
+                                                                  args.global_dim,
+                                                                  args.origin,
+                                                                  args.inv_dim,
+                                                                  args.num_classify_trials,
+                                                                  args.seed,
+                                                                  args.filler_id);
+    return cudaSuccess;
     }
 
 /*!
@@ -691,33 +682,28 @@ hipError_t triangulated_classify_cells(const triangulated_classify_cells_args_t&
  *
  * \sa mpcd::gpu::kernel::triangulated_flag_fill_cells
  */
-hipError_t triangulated_flag_fill_cells(bool* d_fill_flags,
-                                        const unsigned int* d_num_tri_per_cell,
-                                        const unsigned int* d_cut_candidates,
-                                        const bool* d_center_outside,
-                                        unsigned int num_cut_cells,
-                                        unsigned int block_size)
+cudaError_t triangulated_flag_fill_cells(bool* d_fill_flags,
+                                         const unsigned int* d_num_tri_per_cell,
+                                         const unsigned int* d_cut_candidates,
+                                         const bool* d_center_outside,
+                                         unsigned int num_cut_cells,
+                                         unsigned int block_size)
     {
     if (num_cut_cells == 0)
-        return hipSuccess;
+        return cudaSuccess;
 
-    hipFuncAttributes attr;
-    hipFuncGetAttributes(&attr,
-                         reinterpret_cast<const void*>(kernel::triangulated_flag_fill_cells));
+    cudaFuncAttributes attr;
+    cudaFuncGetAttributes(&attr, (const void*)kernel::triangulated_flag_fill_cells);
     const unsigned int max_block_size = attr.maxThreadsPerBlock;
 
     const unsigned int run_block_size = min(block_size, max_block_size);
-    hipLaunchKernelGGL(kernel::triangulated_flag_fill_cells,
-                       dim3(num_cut_cells / run_block_size + 1),
-                       dim3(run_block_size),
-                       0,
-                       0,
-                       d_fill_flags,
-                       d_num_tri_per_cell,
-                       d_cut_candidates,
-                       d_center_outside,
-                       num_cut_cells);
-    return hipSuccess;
+    dim3 grid(num_cut_cells / run_block_size + 1);
+    kernel::triangulated_flag_fill_cells<<<grid, run_block_size>>>(d_fill_flags,
+                                                                   d_num_tri_per_cell,
+                                                                   d_cut_candidates,
+                                                                   d_center_outside,
+                                                                   num_cut_cells);
+    return cudaSuccess;
     }
 
 /*!
@@ -730,53 +716,47 @@ hipError_t triangulated_flag_fill_cells(bool* d_fill_flags,
  * \param d_out_indices Index of each flagged cell in \a d_cells
  * \param d_num_out Number of flagged cells
  */
-hipError_t compact_flagged_cells(void* d_tmp,
-                                 size_t& tmp_bytes,
-                                 const bool* d_flags,
-                                 const unsigned int* d_cells,
-                                 unsigned int num_cells,
-                                 unsigned int* d_out_cells,
-                                 unsigned int* d_out_indices,
-                                 unsigned int* d_num_out)
+cudaError_t compact_flagged_cells(void* d_tmp,
+                                  size_t& tmp_bytes,
+                                  const bool* d_flags,
+                                  const unsigned int* d_cells,
+                                  unsigned int num_cells,
+                                  unsigned int* d_out_cells,
+                                  unsigned int* d_out_indices,
+                                  unsigned int* d_num_out)
     {
     thrust::counting_iterator<unsigned int> itr(0);
     if (d_tmp == NULL)
         {
         size_t cells_bytes = 0;
         size_t indices_bytes = 0;
-        hipcub::DeviceSelect::Flagged(d_tmp,
-                                      cells_bytes,
-                                      d_cells,
-                                      d_flags,
-                                      d_out_cells,
-                                      d_num_out,
-                                      num_cells);
-        hipcub::DeviceSelect::Flagged(d_tmp,
-                                      indices_bytes,
-                                      itr,
-                                      d_flags,
-                                      d_out_indices,
-                                      d_num_out,
-                                      num_cells);
+        cub::DeviceSelect::Flagged(d_tmp,
+                                   cells_bytes,
+                                   d_cells,
+                                   d_flags,
+                                   d_out_cells,
+                                   d_num_out,
+                                   num_cells);
+        cub::DeviceSelect::Flagged(d_tmp,
+                                   indices_bytes,
+                                   itr,
+                                   d_flags,
+                                   d_out_indices,
+                                   d_num_out,
+                                   num_cells);
         tmp_bytes = max(cells_bytes, indices_bytes);
-        return hipSuccess;
+        return cudaSuccess;
         }
 
-    hipcub::DeviceSelect::Flagged(d_tmp,
-                                  tmp_bytes,
-                                  d_cells,
-                                  d_flags,
-                                  d_out_cells,
-                                  d_num_out,
-                                  num_cells);
-    hipcub::DeviceSelect::Flagged(d_tmp,
-                                  tmp_bytes,
-                                  itr,
-                                  d_flags,
-                                  d_out_indices,
-                                  d_num_out,
-                                  num_cells);
-    return hipSuccess;
+    cub::DeviceSelect::Flagged(d_tmp,
+                               tmp_bytes,
+                               d_cells,
+                               d_flags,
+                               d_out_cells,
+                               d_num_out,
+                               num_cells);
+    cub::DeviceSelect::Flagged(d_tmp, tmp_bytes, itr, d_flags, d_out_indices, d_num_out, num_cells);
+    return cudaSuccess;
     }
 
 /*!
@@ -790,57 +770,52 @@ hipError_t compact_flagged_cells(void* d_tmp,
  *
  * \sa mpcd::gpu::kernel::triangulated_draw_virtual_particles
  */
-hipError_t triangulated_draw_virtual_particles(const draw_virtual_particles_args_t& args,
-                                               const unsigned int* d_fill_candidates,
-                                               const unsigned int* d_tri_list,
-                                               const unsigned int* d_num_tri_per_cell,
-                                               unsigned int max_tri_per_cell,
-                                               const ShortReal3* d_vertices,
-                                               const uint3* d_triangles)
+cudaError_t triangulated_draw_virtual_particles(const draw_virtual_particles_args_t& args,
+                                                const unsigned int* d_fill_candidates,
+                                                const unsigned int* d_tri_list,
+                                                const unsigned int* d_num_tri_per_cell,
+                                                unsigned int max_tri_per_cell,
+                                                const ShortReal3* d_vertices,
+                                                const uint3* d_triangles)
     {
     if (args.num_fill_cells == 0)
-        return hipSuccess;
+        return cudaSuccess;
 
-    hipFuncAttributes attr;
-    hipFuncGetAttributes(
-        &attr,
-        reinterpret_cast<const void*>(kernel::triangulated_draw_virtual_particles));
+    cudaFuncAttributes attr;
+    cudaFuncGetAttributes(&attr, (const void*)kernel::triangulated_draw_virtual_particles);
     const unsigned int max_block_size = attr.maxThreadsPerBlock;
 
     const unsigned int run_block_size = min(args.block_size, max_block_size);
     const unsigned int num_threads = args.num_fill_cells * args.threads_per_cell;
-    hipLaunchKernelGGL(kernel::triangulated_draw_virtual_particles,
-                       dim3(num_threads / run_block_size + 1),
-                       dim3(run_block_size),
-                       0,
-                       0,
-                       args.d_tmp_pos,
-                       args.d_tmp_vel,
-                       args.d_keep_particles,
-                       args.d_fill_cells,
-                       args.num_fill_cells,
-                       args.global_box,
-                       args.draw_box,
-                       args.ci,
-                       args.global_dim,
-                       args.origin,
-                       args.inv_dim,
-                       args.mean_per_cell,
-                       args.max_per_cell,
-                       args.vel_factor,
-                       args.type,
-                       args.timestep,
-                       args.seed,
-                       args.filler_id,
-                       args.threads_per_cell,
-                       args.d_max_observed,
-                       d_fill_candidates,
-                       d_tri_list,
-                       d_num_tri_per_cell,
-                       max_tri_per_cell,
-                       d_vertices,
-                       d_triangles);
-    return hipSuccess;
+    dim3 grid(num_threads / run_block_size + 1);
+    kernel::triangulated_draw_virtual_particles<<<grid, run_block_size>>>(args.d_tmp_pos,
+                                                                          args.d_tmp_vel,
+                                                                          args.d_keep_particles,
+                                                                          args.d_fill_cells,
+                                                                          args.num_fill_cells,
+                                                                          args.global_box,
+                                                                          args.draw_box,
+                                                                          args.ci,
+                                                                          args.global_dim,
+                                                                          args.origin,
+                                                                          args.inv_dim,
+                                                                          args.mean_per_cell,
+                                                                          args.max_per_cell,
+                                                                          args.vel_factor,
+                                                                          args.type,
+                                                                          args.timestep,
+                                                                          args.seed,
+                                                                          args.filler_id,
+                                                                          args.threads_per_cell,
+                                                                          args.d_max_observed,
+                                                                          d_fill_candidates,
+                                                                          d_tri_list,
+                                                                          d_num_tri_per_cell,
+                                                                          max_tri_per_cell,
+                                                                          d_vertices,
+                                                                          d_triangles);
+
+    return cudaSuccess;
     }
 
 #undef DEVICE

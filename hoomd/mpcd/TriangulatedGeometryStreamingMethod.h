@@ -331,7 +331,14 @@ template<class Force> void TriangulatedGeometryStreamingMethod<Force>::stream(ui
 
                 // narrow search: exact ray-triangle intersection
                 Scalar t_hit;
-                if (!intersectTriangle(pos, vel, aa, bb, cc, dt_remain, Scalar(1e-12), t_hit))
+                if (!intersectTriangle(pos,
+                                       vel,
+                                       aa,
+                                       bb,
+                                       cc,
+                                       dt_remain,
+                                       mpcd::detail::TRIANGLE_INTERSECTION_TOLERANCE,
+                                       t_hit))
                     continue;
 
                 if (t_hit >= best_t)

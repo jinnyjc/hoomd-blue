@@ -50,12 +50,12 @@ struct TriangleInsertOp
         const ShortReal3 b = vertices[tri.y];
         const ShortReal3 c = vertices[tri.z];
 
-        const float3 lo = make_float3(min(a.x, min(b.x, c.x)),
-                                      min(a.y, min(b.y, c.y)),
-                                      min(a.z, min(b.z, c.z)));
-        const float3 hi = make_float3(max(a.x, max(b.x, c.x)),
-                                      max(a.y, max(b.y, c.y)),
-                                      max(a.z, max(b.z, c.z)));
+        const ShortReal3 lo {min(a.x, min(b.x, c.x)),
+                             min(a.y, min(b.y, c.y)),
+                             min(a.z, min(b.z, c.z))};
+        const ShortReal3 hi {max(a.x, max(b.x, c.x)),
+                             max(a.y, max(b.y, c.y)),
+                             max(a.z, max(b.z, c.z))};
 
         return neighbor::BoundingBox(lo, hi);
         }
@@ -115,7 +115,7 @@ TriangleLBVHWrapper::~TriangleLBVHWrapper()
 void TriangleLBVHWrapper::setup(const ShortReal3* vertices,
                                 const uint3* triangles,
                                 unsigned int num_triangles,
-                                hipStream_t stream)
+                                cudaStream_t stream)
     {
     TriangleInsertOp insert(vertices, triangles, num_triangles);
     lbvh_->setup(stream, insert);
@@ -139,7 +139,7 @@ void TriangleLBVHWrapper::build(const ShortReal3* vertices,
                                 unsigned int num_triangles,
                                 const Scalar3& lo,
                                 const Scalar3& hi,
-                                hipStream_t stream,
+                                cudaStream_t stream,
                                 unsigned int block_size)
     {
 #if HOOMD_LONGREAL_SIZE == 64

@@ -30,6 +30,16 @@ namespace hoomd
     {
 namespace mpcd
     {
+namespace detail
+    {
+//! Tolerance for the ray-triangle intersection test
+/*!
+ * A particle whose largest velocity component is within this tolerance of zero is treated as not
+ * moving, so it cannot hit a triangle.
+ */
+constexpr Scalar TRIANGLE_INTERSECTION_TOLERANCE = Scalar(1e-12);
+    } // end namespace detail
+
 //! Closest point on a triangle to a point
 /*!
  * \param p Query point
@@ -203,6 +213,9 @@ class PYBIND11_EXPORT TriangulatedGeometry
 
     //! Get triangle BVH Tree
     const hoomd::detail::AABBTree& getTriangleTree() const;
+
+    //! Get the AABB of each triangle
+    const std::vector<hoomd::detail::AABB>& getTriangleAABBs() const;
 #ifdef ENABLE_HIP
     //! Get triangle LBVH Tree for GPU
     gpu::TriangleLBVHWrapper& getTriangleLBVH() const;

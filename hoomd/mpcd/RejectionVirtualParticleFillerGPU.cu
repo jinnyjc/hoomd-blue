@@ -8,7 +8,7 @@
 
 #include "RejectionVirtualParticleFillerGPU.cuh"
 
-#include <hipcub/hipcub.hpp>
+#include <cub/cub.cuh>
 #include <thrust/iterator/counting_iterator.h>
 
 namespace hoomd

@@ -107,6 +107,11 @@ const hoomd::detail::AABBTree& TriangulatedGeometry::getTriangleTree() const
     {
     return m_triangle_tree;
     }
+
+const std::vector<hoomd::detail::AABB>& TriangulatedGeometry::getTriangleAABBs() const
+    {
+    return m_triangle_aabbs;
+    }
 #ifdef ENABLE_HIP
 gpu::TriangleLBVHWrapper& TriangulatedGeometry::getTriangleLBVH() const
     {

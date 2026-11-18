@@ -505,6 +505,14 @@ void TriangulatedGeometryFillerGPU::fill(uint64_t timestep)
                 CHECK_CUDA_ERROR();
             m_draw_tuner->end();
 
+            // the kernel only records draws that exceeded the capacity, so zero means no overflow.
+            // an overflowed fill is redone, so its particles are not compacted
+            max_observed = m_max_observed.readFlags();
+            if (max_observed > m_alloc_per_cell)
+                {
+                continue;
+                }
+
                 {
                 // compact the selected particles down with CUB
                 void* d_tmp_storage = NULL;
@@ -530,9 +538,6 @@ void TriangulatedGeometryFillerGPU::fill(uint64_t timestep)
                 }
             num_selected = m_num_keep.readFlags();
             }
-
-        // the kernel only records draws that exceeded the capacity, so zero means no overflow
-        max_observed = m_max_observed.readFlags();
         } while (max_observed > m_alloc_per_cell);
 
     // Step 3: Allocate memory for the new virtual particles and copy them in. The tags can only be

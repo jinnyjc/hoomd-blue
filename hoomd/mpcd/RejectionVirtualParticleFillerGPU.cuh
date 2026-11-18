@@ -324,27 +324,28 @@ __global__ void draw_virtual_particles(Scalar4* d_tmp_pos,
         hoomd::Seed(hoomd::RNGIdentifier::VirtualParticleFiller, timestep, seed),
         hoomd::Counter(wrappedCellIndex(gi, gj, gk, global_dim), filler_id, 1));
 
-    unsigned int num_in_cell = hoomd::PoissonDistribution<Scalar>(mean_per_cell)(rng_cell);
+    const unsigned int num_in_cell = hoomd::PoissonDistribution<Scalar>(mean_per_cell)(rng_cell);
     if (num_in_cell > max_per_cell)
         {
-        // report the overflow for reallocation and keep nothing from this cell
+        // report the overflow for reallocation; the whole fill is redone with larger arrays, so
+        // nothing is drawn for this cell
         if (offset == 0)
             {
             atomicMax(d_max_observed, num_in_cell);
             }
-        num_in_cell = 0;
+        return;
         }
 
     hoomd::RandomGenerator rng(
         hoomd::Seed(hoomd::RNGIdentifier::VirtualParticleFiller, timestep, seed),
         hoomd::Counter(wrappedCellIndex(gi, gj, gk, global_dim), filler_id, 2 + offset));
 
-    const unsigned int base = n * max_per_cell;
-    for (unsigned int p = offset; p < max_per_cell; p += threads_per_cell)
+    for (unsigned int p = offset, pidx = n * max_per_cell + offset; p < max_per_cell;
+         p += threads_per_cell, pidx += threads_per_cell)
         {
         if (p >= num_in_cell)
             {
-            d_keep_particles[base + p] = false;
+            d_keep_particles[pidx] = false;
             continue;
             }
         Scalar3 pos = make_scalar3(hoomd::UniformDistribution<Scalar>(-half_w.x, half_w.x)(rng),
@@ -356,20 +357,19 @@ __global__ void draw_virtual_particles(Scalar4* d_tmp_pos,
         pos += cell_center;
 
         const bool is_outside = geom.isOutside(pos);
-        d_keep_particles[base + p] = is_outside;
+        d_keep_particles[pidx] = is_outside;
 
         if (!is_outside)
             continue;
 
-        d_tmp_pos[base + p] = make_scalar4(pos.x, pos.y, pos.z, __int_as_scalar(type));
+        d_tmp_pos[pidx] = make_scalar4(pos.x, pos.y, pos.z, __int_as_scalar(type));
 
         hoomd::NormalDistribution<Scalar> gen(vel_factor, 0.0);
         Scalar3 vel;
         gen(vel.x, vel.y, rng);
         vel.z = gen(rng);
         geom.addToVirtualParticleVelocity(vel, pos);
-        d_tmp_vel[base + p]
-            = make_scalar4(vel.x, vel.y, vel.z, __int_as_scalar(mpcd::detail::NO_CELL));
+        d_tmp_vel[pidx] = make_scalar4(vel.x, vel.y, vel.z, __int_as_scalar(mpcd::detail::NO_CELL));
         }
     }
 
