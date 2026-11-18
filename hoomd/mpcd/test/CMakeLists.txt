@@ -4,12 +4,11 @@ set(TEST_LIST
     cell_list
     cell_thermo_compute
     force
-    parallel_plate_geometry_filler
-    planar_pore_geometry_filler
     rejection_filler
     sorter
     srd_collision_method
     streaming_method
+    triangulated_filler
     virtual_particle
     )
 
@@ -23,8 +22,6 @@ if(ENABLE_MPI)
     ADD_TO_MPI_TESTS(cell_list 8)
     ADD_TO_MPI_TESTS(cell_thermo_compute 8)
     ADD_TO_MPI_TESTS(communicator 8)
-    ADD_TO_MPI_TESTS(parallel_plate_geometry_filler 8)
-    ADD_TO_MPI_TESTS(planar_pore_geometry_filler 8)
     ADD_TO_MPI_TESTS(rejection_filler 8)
 endif()
 

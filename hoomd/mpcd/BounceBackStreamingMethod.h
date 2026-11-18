@@ -77,13 +77,13 @@ class PYBIND11_EXPORT BounceBackStreamingMethod : public mpcd::StreamingMethod
         m_geom = geom;
         }
 
-    //! Set the solvent force
+    //! Get the solvent force
     std::shared_ptr<Force> getForce() const
         {
         return m_force;
         }
 
-    //! Get the solvent force
+    //! Set the solvent force
     void setForce(std::shared_ptr<Force> force)
         {
         m_force = force;

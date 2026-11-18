@@ -1,4 +1,4 @@
-// Copyright (c) 2009-2025 The Regents of the University of Michigan.
+// Copyright (c) 2009-2026 The Regents of the University of Michigan.
 // Part of HOOMD-blue, released under the BSD 3-Clause License.
 
 #ifndef MPCD_TRIANGULATED_GEOMETRY_STREAMING_METHOD_GPU_CUH_
@@ -11,9 +11,11 @@
 
 #include <vector>
 
-#include <hip/hip_runtime.h>
+#include <cuda_runtime.h>
 
 #include "ParticleDataUtilities.h"
+#include "TriangulatedGeometry.cuh"
+#include "TriangulatedGeometry.h"
 #include "hoomd/BoxDim.h"
 #include "hoomd/HOOMDMath.h"
 
@@ -52,73 +54,28 @@ struct triangulated_stream_args_t
     const unsigned int N; //!< Number of particles
     };
 
-//! Wrapper around neighbor::LBVH for triangulated geometry
-/*!
- * This wrapper only exposes data types that are natively supported in HOOMD
- * so that all neighbor-specific templates and structs can be handled only
- * in CUDA code.
- */
-class TriangleLBVHWrapper
-    {
-    public:
-    //! Constructor
-    TriangleLBVHWrapper();
-
-    //! Destructor
-    ~TriangleLBVHWrapper();
-
-    //! Setup the LBVH
-    void setup(const Scalar3* vertices,
-               const uint3* triangles,
-               unsigned int n_triangles,
-               hipStream_t stream);
-
-    //! Build the LBVH
-    void build(const Scalar3* vertices,
-               const uint3* triangles,
-               unsigned int n_triangles,
-               const Scalar3& lo,
-               const Scalar3& hi,
-               hipStream_t stream,
-               unsigned int block_size);
-
-    //! Get underlying LBVH
-    neighbor::LBVH* get()
-        {
-        return lbvh_;
-        }
-
-    //! Get number of primitives in the LBVH
-    unsigned int getN() const;
-
-    //! Get the list of tunable parameters
-    std::vector<unsigned int> getTunableParameters() const;
-
-    private:
-    neighbor::LBVH* lbvh_; //!< Underlying neighbor::LBVH
-    };
-
 //! Wrapper around neighbor::LBVHTraverser for triangulated geometry
 /*!
- * This wrapper only exposes data types that are natively supported in HOOMD
- * so that all neighbor-specific templates and structs can be handled only
+ * The query volume of each active particle is the AABB of its remaining path,
+ * see PathQueryOp. This wrapper only exposes data types that are natively supported
+ * in HOOMD so that all neighbor-specific templates and structs can be handled only
  * in CUDA code.
  */
-class TriangleLBVHTraverserWrapper
+class PathLBVHTraverserWrapper
     {
     public:
     //! Constructor
-    TriangleLBVHTraverserWrapper();
+    PathLBVHTraverserWrapper();
 
-    /// Destructor
-    ~TriangleLBVHTraverserWrapper();
+    //! Destructor
+    ~PathLBVHTraverserWrapper();
 
     //! Setup the LBVH traverser
-    void setup(neighbor::LBVH& lbvh, hipStream_t stream);
+    void setup(neighbor::LBVH& lbvh, cudaStream_t stream);
 
     //! Traverse the LBVH
     void traverse(const triangulated_stream_args_t& args,
-                  const Scalar3* d_vertices,
+                  const ShortReal3* d_vertices,
                   const uint3* d_triangles,
                   Scalar* d_dt_remain,
                   const unsigned int* d_active_idx,
@@ -126,7 +83,7 @@ class TriangleLBVHTraverserWrapper
                   unsigned int num_active,
                   bool no_slip,
                   neighbor::LBVH& lbvh,
-                  hipStream_t stream,
+                  cudaStream_t stream,
                   unsigned int block_size);
 
     //! Get the list of tunable parameters
@@ -138,11 +95,11 @@ class TriangleLBVHTraverserWrapper
 
 //! Kernel driver to apply first half-kick + initialize dt_remain and active idx
 template<class Force>
-hipError_t triangulated_stream_init(const triangulated_stream_args_t& args,
-                                    const Force& solvent_force,
-                                    Scalar* d_dt_remain,
-                                    unsigned int* d_active_idx,
-                                    unsigned int block_size);
+cudaError_t triangulated_stream_init(const triangulated_stream_args_t& args,
+                                     const Force& solvent_force,
+                                     Scalar* d_dt_remain,
+                                     unsigned int* d_active_idx,
+                                     unsigned int block_size);
 
 //! Compact active list using CUB DevicePartition::Flagged
 /*!
@@ -150,23 +107,23 @@ hipError_t triangulated_stream_init(const triangulated_stream_args_t& args,
  * \param cub_tmp_bytes       Number of bytes in temporary storage
  * \param d_active_idx        Current active particle indices
  * \param d_next_active_idx   Compacted output active indices
- * \param d_flags             Flag set to 1 if the particle's dt_remain > 0
+ * \param d_flags             Flags set to 1 if the particle's dt_remain > 0
  * \param d_num_active        Output count of active particles
  * \param num_active          Current number of active particles
  */
-hipError_t triangulated_compact_active(void* cub_tmp,
-                                       size_t& cub_tmp_bytes,
-                                       unsigned int* d_active_idx,
-                                       unsigned int* d_next_active_idx,
-                                       unsigned int* d_flags,
-                                       unsigned int* d_num_active,
-                                       unsigned int num_active);
+cudaError_t triangulated_compact_active(void* cub_tmp,
+                                        size_t& cub_tmp_bytes,
+                                        unsigned int* d_active_idx,
+                                        unsigned int* d_next_active_idx,
+                                        unsigned int* d_flags,
+                                        unsigned int* d_num_active,
+                                        unsigned int num_active);
 
 //! Kernel driver to apply final half-kick + box wrap
 template<class Force>
-hipError_t triangulated_stream_finalize(const triangulated_stream_args_t& args,
-                                        const Force& solvent_force,
-                                        unsigned int block_size);
+cudaError_t triangulated_stream_finalize(const triangulated_stream_args_t& args,
+                                         const Force& solvent_force,
+                                         unsigned int block_size);
 
 #ifdef __HIPCC__
 namespace kernel
@@ -229,62 +186,54 @@ __global__ void triangulated_stream_finalize_kernel(Scalar4* d_pos,
     } // end namespace kernel
 
 template<class Force>
-hipError_t triangulated_stream_init(const triangulated_stream_args_t& args,
-                                    const Force& solvent_force,
-                                    Scalar* d_dt_remain,
-                                    unsigned int* d_active_idx,
-                                    unsigned int block_size)
+cudaError_t triangulated_stream_init(const triangulated_stream_args_t& args,
+                                     const Force& solvent_force,
+                                     Scalar* d_dt_remain,
+                                     unsigned int* d_active_idx,
+                                     unsigned int block_size)
     {
     unsigned int max_block_size;
-    hipFuncAttributes attr;
-    hipFuncGetAttributes(
+    cudaFuncAttributes attr;
+    cudaFuncGetAttributes(
         &attr,
         reinterpret_cast<const void*>(kernel::triangulated_stream_init_kernel<Force>));
     max_block_size = attr.maxThreadsPerBlock;
 
     const unsigned int run_block_size = min(block_size, max_block_size);
-    hipLaunchKernelGGL(kernel::triangulated_stream_init_kernel<Force>,
-                       dim3(args.N / run_block_size + 1),
-                       dim3(run_block_size),
-                       0,
-                       0,
-                       args.d_pos,
-                       args.d_vel,
-                       args.mass,
-                       args.dt,
-                       args.N,
-                       solvent_force,
-                       d_dt_remain,
-                       d_active_idx);
-    return hipSuccess;
+    dim3 grid(args.N / run_block_size + 1);
+    kernel::triangulated_stream_init_kernel<Force><<<grid, run_block_size>>>(args.d_pos,
+                                                                             args.d_vel,
+                                                                             args.mass,
+                                                                             args.dt,
+                                                                             args.N,
+                                                                             solvent_force,
+                                                                             d_dt_remain,
+                                                                             d_active_idx);
+    return cudaSuccess;
     }
 
 template<class Force>
-hipError_t triangulated_stream_finalize(const triangulated_stream_args_t& args,
-                                        const Force& solvent_force,
-                                        unsigned int block_size)
+cudaError_t triangulated_stream_finalize(const triangulated_stream_args_t& args,
+                                         const Force& solvent_force,
+                                         unsigned int block_size)
     {
     unsigned int max_block_size;
-    hipFuncAttributes attr;
-    hipFuncGetAttributes(
+    cudaFuncAttributes attr;
+    cudaFuncGetAttributes(
         &attr,
         reinterpret_cast<const void*>(kernel::triangulated_stream_finalize_kernel<Force>));
     max_block_size = attr.maxThreadsPerBlock;
 
     const unsigned int run_block_size = min(block_size, max_block_size);
-    hipLaunchKernelGGL(kernel::triangulated_stream_finalize_kernel<Force>,
-                       dim3(args.N / run_block_size + 1),
-                       dim3(run_block_size),
-                       0,
-                       0,
-                       args.d_pos,
-                       args.d_vel,
-                       args.mass,
-                       args.box,
-                       args.dt,
-                       args.N,
-                       solvent_force);
-    return hipSuccess;
+    dim3 grid(args.N / run_block_size + 1);
+    kernel::triangulated_stream_finalize_kernel<Force><<<grid, run_block_size>>>(args.d_pos,
+                                                                                 args.d_vel,
+                                                                                 args.mass,
+                                                                                 args.box,
+                                                                                 args.dt,
+                                                                                 args.N,
+                                                                                 solvent_force);
+    return cudaSuccess;
     }
 #endif // __HIPCC__
 

@@ -1,4 +1,4 @@
-// Copyright (c) 2009-2025 The Regents of the University of Michigan.
+// Copyright (c) 2009-2026 The Regents of the University of Michigan.
 // Part of HOOMD-blue, released under the BSD 3-Clause License.
 
 /*!
@@ -24,14 +24,14 @@ namespace mpcd
 namespace gpu
     {
 //! Template instantiation
-template hipError_t __attribute__((visibility("default")))
+template cudaError_t __attribute__((visibility("default")))
 triangulated_stream_init<FORCE_CLASS>(const triangulated_stream_args_t& args,
                                       const FORCE_CLASS& solvent_force,
                                       Scalar* d_dt_remain,
                                       unsigned int* d_active_idx,
                                       unsigned int block_size);
 
-template hipError_t __attribute__((visibility("default")))
+template cudaError_t __attribute__((visibility("default")))
 triangulated_stream_finalize<FORCE_CLASS>(const triangulated_stream_args_t& args,
                                           const FORCE_CLASS& solvent_force,
                                           unsigned int block_size);

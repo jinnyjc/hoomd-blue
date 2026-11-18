@@ -36,7 +36,6 @@ void export_CosineChannelGeometryFiller(pybind11::module&);
 void export_CosineExpansionContractionGeometry(pybind11::module&);
 void export_CosineExpansionContractionGeometryFiller(pybind11::module&);
 void export_Integrator(pybind11::module&);
-void export_ManualVirtualParticleFiller(pybind11::module&);
 void export_NoForce(pybind11::module&);
 void export_ParallelPlateGeometry(pybind11::module&);
 void export_ParallelPlateGeometryFiller(pybind11::module&);
@@ -52,6 +51,7 @@ void export_StreamingMethod(pybind11::module&);
 void export_TriangulatedGeometry(pybind11::module&);
 void export_TriangulatedGeometryAccessDevice(pybind11::module&);
 void export_TriangulatedGeometryAccessHost(pybind11::module&);
+void export_TriangulatedGeometryFiller(pybind11::module&);
 void export_VirtualParticleFiller(pybind11::module&);
 #ifdef ENABLE_HIP
 void export_ATCollisionMethodGPU(pybind11::module&);
@@ -69,6 +69,7 @@ void export_ReverseNonequilibriumShearFlowGPU(pybind11::module&);
 void export_SorterGPU(pybind11::module&);
 void export_SphereGeometryFillerGPU(pybind11::module&);
 void export_SRDCollisionMethodGPU(pybind11::module&);
+void export_TriangulatedGeometryFillerGPU(pybind11::module&);
 #endif // ENABLE_HIP
 
 void export_BulkStreamingMethodBlockForce(pybind11::module&);
@@ -227,7 +228,6 @@ PYBIND11_MODULE(_mpcd, m)
     export_CosineExpansionContractionGeometry(m);
     export_CosineExpansionContractionGeometryFiller(m);
     export_Integrator(m);
-    export_ManualVirtualParticleFiller(m);
     export_NoForce(m);
     export_ParallelPlateGeometry(m);
     export_ParallelPlateGeometryFiller(m);
@@ -241,6 +241,7 @@ PYBIND11_MODULE(_mpcd, m)
     export_SRDCollisionMethod(m);
     export_TriangulatedGeometry(m);
     export_TriangulatedGeometryAccessHost(m);
+    export_TriangulatedGeometryFiller(m);
 #ifdef ENABLE_HIP
     export_ATCollisionMethodGPU(m);
     export_CellListGPU(m);
@@ -258,6 +259,7 @@ PYBIND11_MODULE(_mpcd, m)
     export_SphereGeometryFillerGPU(m);
     export_SRDCollisionMethodGPU(m);
     export_TriangulatedGeometryAccessDevice(m);
+    export_TriangulatedGeometryFillerGPU(m);
 #endif // ENABLE_HIP
 
     export_BulkStreamingMethodBlockForce(m);
@@ -335,7 +337,7 @@ PYBIND11_MODULE(_mpcd, m)
     export_BounceBackStreamingMethodPlanarPoreGeometryConstantForceGPU(m);
     export_BounceBackStreamingMethodPlanarPoreGeometryNoForceGPU(m);
     export_BounceBackStreamingMethodPlanarPoreGeometrySineForceGPU(m);
-    // planar pore
+    // sphere
     export_BounceBackStreamingMethodSphereGeometryBlockForceGPU(m);
     export_BounceBackStreamingMethodSphereGeometryConstantForceGPU(m);
     export_BounceBackStreamingMethodSphereGeometryNoForceGPU(m);
